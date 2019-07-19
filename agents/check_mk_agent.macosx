@@ -124,7 +124,27 @@ then
     tmutil latestbackup 2>&1
 fi
 
-if type osx-cpu-temp >/dev/null
+# temperatures and sensors, requires HardwareMonitor.app or osx-cpu-temp
+if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
+	echo '<<<lnx_thermal:sep(124)>>>'
+    /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor -c | while read ; do
+        Temp=$(awk -F": " '{print $2}' <<<$REPLY | tr -d -c '[:digit:]')
+        case $REPLY in
+            SMART*)
+                Sensor="$(sed 's/^SMART Disk //' <<<"$REPLY" | cut -d'(' -f1)"
+                echo "${Sensor}|enabled|disk-thermal|${Temp}000|45000|passive|55000|critical"
+                ;;
+            "SMC DRIVE BAY"*)
+                Sensor="$(sed 's/^SM. //' <<<"$REPLY" | cut -d'(' -f1)"
+                echo "${Sensor}|enabled|disk-thermal|${Temp}000|45000|passive|55000|critical"
+                ;;
+            SMC*|SMB*)
+                Sensor="$(sed 's/^SM. //' <<<"$REPLY" | awk -F": " '{print $1}')"
+                echo "${Sensor}|enabled|thermal|${Temp}000|70000|passive|85000|critical"
+                ;;
+        esac
+    done
+elif type osx-cpu-temp >/dev/null
 then
     echo '<<<lnx_thermal:sep(124)>>>'
     echo "thermal_zone0|enabled|cpu-thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|55000|passive|65000|critical"
