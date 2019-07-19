@@ -53,7 +53,7 @@ echo AgentOS: macosx
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
 echo '<<<df>>>'
-df -kPT hfs,apfs | sed 1d | \
+df -kPT hfs,apfs | egrep -v "Time Machine Backups|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery" | sed 1d | \
 while read DEV REST; do
     TYPE=$(diskutil info "$DEV" | grep '^\s*Type' | cut -d: -f2 | tr -d '[:space:]')
     echo "$DEV $TYPE $REST"
