@@ -50,7 +50,7 @@ echo '<<<check_mk>>>'
 echo Version: 1.5.0p20
 echo AgentOS: macosx
 
-osver="$(uname -r)"
+osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
 echo '<<<df>>>'
 df -kPT hfs,apfs | sed 1d | \
