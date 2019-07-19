@@ -31,8 +31,8 @@
 export LC_ALL=C
 unset LANG
 
-export MK_LIBDIR="/to/be/changed"
-export MK_CONFDIR="/to/be/changed"
+export MK_LIBDIR="/usr/lib/check_mk_agent"
+export MK_CONFDIR="/etc/check_mk"
 
 # Optionally set a tempdir for all subsequent calls
 #export TMPDIR=
