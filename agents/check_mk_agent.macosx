@@ -135,7 +135,7 @@ if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
                 echo "${Sensor}|enabled|disk-thermal|${Temp}000|45000|passive|55000|critical"
                 ;;
             "SMC DRIVE BAY"*)
-                Sensor="$(sed 's/^SM. //' <<<"$REPLY" | cut -d'(' -f1)"
+                Sensor="$(sed 's/^SM. //' <<<"$REPLY" | awk -F": " '{print $1}')"
                 echo "${Sensor}|enabled|disk-thermal|${Temp}000|45000|passive|55000|critical"
                 ;;
             SMC*|SMB*)
