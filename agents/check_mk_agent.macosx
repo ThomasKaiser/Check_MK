@@ -124,6 +124,12 @@ then
     tmutil latestbackup 2>&1
 fi
 
+if type osx-cpu-temp >/dev/null
+then
+    echo '<<<lnx_thermal:sep(124)>>>'
+    echo "thermal_zone0|enabled|cpu-thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|55000|passive|65000|critical"
+fi
+
 ###############################
 # Things up for takers:
 ###############################
