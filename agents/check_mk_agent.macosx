@@ -126,8 +126,8 @@ fi
 
 # temperatures and sensors, requires HardwareMonitor.app or osx-cpu-temp
 if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
-	echo '<<<lnx_thermal:sep(124)>>>'
-    /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor -c | while read ; do
+    echo '<<<lnx_thermal:sep(124)>>>'
+    /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor -c | grep " C$" | while read ; do
         Temp=$(awk -F": " '{print $2}' <<<$REPLY | tr -d -c '[:digit:]')
         case $REPLY in
             SMART*)
