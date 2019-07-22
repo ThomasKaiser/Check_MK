@@ -147,7 +147,7 @@ if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
 elif type osx-cpu-temp >/dev/null
 then
     echo '<<<lnx_thermal:sep(124)>>>'
-    echo "thermal_zone0|enabled|cpu-thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|70000|passive|90000|critical"
+    echo "CPU A PROXIMITY|enabled|thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|70000|passive|90000|critical"
 fi
 
 ###############################
