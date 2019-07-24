@@ -118,11 +118,11 @@ if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
     IFS=$OLD_IFS
 fi
 
-if type tmutil >/dev/null
-then
-    echo '<<<timemachine>>>'
-    tmutil latestbackup 2>&1
-fi
+# if type tmutil >/dev/null
+# then
+#     echo '<<<timemachine>>>'
+#     tmutil latestbackup 2>&1
+# fi
 
 # temperatures and sensors, requires HardwareMonitor.app or osx-cpu-temp
 if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
