@@ -1,0 +1,310 @@
+#!/bin/bash
+#
+# /usr/local/ao/configure-netatalk.sh
+
+ServerName=tk-backup
+SharePrefix=/mnt/timemachine
+ConfigDir=/etc/tk-backup
+AFPConf=/usr/local/etc/afp.conf
+MonitorString="veeam"
+MonitorLocation=/var/run/backup-results.txt
+
+GenerateAFPConf() {
+	cat >"${AFPConf}" <<-EOF
+	[Global]
+	max connections = 40
+	mac charset = MAC_ROMAN
+	unix charset = LOCALE
+	guest account = nobody
+	uam list = uams_dhx2.so,uams_guest.so
+	save password = no
+	mimic model = Macmini
+	hostname = ${ServerName}
+	zeroconf name = ${ServerName}
+	log file = /var/log/afp.log
+	log level = default:info
+
+	[a.i.s. Backup]
+	path = /mnt/direkt-backups/ais
+	read only = no
+	unix priv = yes
+	file perm = 0664
+	directory perm = 0775
+	umask = 0002
+	invisible dots = no
+	time machine = no
+	valid users = "ais"
+	invalid users = 
+	rolist = 
+	rwlist = "ais"
+	
+	EOF
+
+	# if a hostname has been provided as argument then generate afp.conf
+	# only with this single volume if existent. Otherwise generate afp.conf
+	# from all config files
+	if [ -f "${ConfigDir}/${1}.conf" ]; then
+		GenerateVolume "${ConfigDir}/${1}.conf" >>"${AFPConf}"
+	else
+		echo -e "Working\c"
+		for i in "${ConfigDir}"/*.conf ; do
+			GenerateVolume "${i}" >>"${AFPConf}"
+			echo -e ".\c"
+		done
+		echo " Done!"
+		ShowStatus
+	fi
+
+	# Reload config
+	AFPPid=$(ps auxww | grep root | grep afpd | grep "afp.conf$" | awk -F" " '/afp.conf/ {print $2}')
+	kill -HUP ${AFPPid}
+	systemctl reload netatalk
+	systemctl reload avahi-daemon
+} # GenerateAFPConf
+
+GenerateVolume() {
+	ConfigFile="${1}"
+	Config=${ConfigFile##*/}
+	Hostname="${Config%.conf}"
+	RawQuota=$(awk '/quota/ {print $2}' <"${ConfigFile}")
+	Quota=$(( ${RawQuota} * 1024 / 1000 ))
+	VolumeName=$(awk '/volname/ {print $2}' <"${ConfigFile}" 2>/dev/null)
+	if [ "X${VolumeName}" = "X" ]; then
+		VolumeName="${Hostname}"
+	fi
+
+	echo "[${VolumeName}]"
+	echo "path = ${SharePrefix}/${VolumeName}"
+	echo "vol size limit = ${Quota}"
+	cat <<-EOF
+	read only = no
+	unix priv = yes
+	file perm = 0664
+	directory perm = 0775
+	umask = 0002
+	invisible dots = no
+	time machine = yes
+	valid users = "nobody"
+	invalid users = 
+	rolist = 
+	rwlist = "nobody"
+	
+	EOF
+
+	zfs create -o mountpoint=${SharePrefix}/${VolumeName} riesenpool/timemachine/${VolumeName} 2>/dev/null
+	zfs set quota=${Quota}M riesenpool/timemachine/${VolumeName}
+	chmod 2777 "${SharePrefix}/${VolumeName}"
+} # GenerateVolume
+
+ShowStatus() {
+	# check if stdout is a terminal...
+	if test -t 1; then
+		echo ""
+		# see if it supports colors...
+		ncolors=$(tput colors)
+		if test -n "$ncolors" && test $ncolors -ge 8; then
+			BOLD="$(tput bold)"
+			NC='\033[0m' # No Color
+			LGREEN='\033[1;32m'
+			LRED='\e[0;91m'
+		fi
+	fi
+
+	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX)"
+	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
+	df -k >"${TmpFile}"
+
+	for i in "${ConfigDir}"/*.conf ; do
+		ShowMachineStatus "${i}"
+	done
+} # ShowStatus
+
+ShowMachineStatus() {
+	ConfigFile="${1}"
+	Config=${ConfigFile##*/}
+	Hostname="${Config%.conf}"
+	OKStatus="OK"
+
+	# check for name mismatch (config file and volume)
+	VolumeName=$(awk '/volname/ {print $2}' <"${ConfigFile}")
+	if [ "X${VolumeName}" = "X" ]; then
+		VolumeName="${Hostname}"
+	fi
+
+	# check space requirements
+	Quota=$(awk '/quota/ {print $2}' <"${ConfigFile}")
+	SpaceUsed=$(awk -F" " "/\/mnt\/timemachine\/${VolumeName}$/ {print \$3}" <"${TmpFile}" 2>/dev/null)
+	case $? in
+		0)
+			# Mountpoint is known
+			Ratio=$(( ${SpaceUsed} / ${Quota} ))
+			if [ ${Ratio} -le 900 ]; then
+				SpaceUsage="$(( ${SpaceUsed} / 1048576 ))G/$(( ${Quota} / 1000 ))G"
+			else
+				SpaceUsage="${LRED}${BOLD}$(( ${SpaceUsed} / 1048576 ))G/$(( ${Quota} / 1000 ))G${NC}"
+				OKStatus="LOW"
+			fi
+			;;
+		*)
+			SpaceUsage=""
+			;;
+	esac
+
+	printf "%12s" "${VolumeName}"
+
+	ResultDir="/mnt/timemachine/${VolumeName}/${Hostname}.sparsebundle"
+	ResultFile="${ResultDir}/com.apple.TimeMachine.Results.plist"
+
+	# count snapshots and get oldest
+	if [ -f "${ResultDir}/com.apple.TimeMachine.SnapshotHistory.plist" ]; then
+		Oldest="$(grep -A1 com.apple.backupd.SnapshotName "${ResultDir}/com.apple.TimeMachine.SnapshotHistory.plist" 2>/dev/null | grep string | head -n1 | cut -c 12-21)"
+		CountOfSnapshots=$(grep -c com.apple.backupd.SnapshotCompletionDate "${ResultDir}/com.apple.TimeMachine.SnapshotHistory.plist")
+		if [ ${CountOfSnapshots} -ge 50 ]; then
+			Snapshots=" (${LRED}${CountOfSnapshots} snapshots${NC}, oldest ${Oldest})"
+		else
+			Snapshots=" (${CountOfSnapshots} snapshots, oldest ${Oldest})"
+		fi
+	else
+		Snapshots=""
+	fi
+
+	if [ -f "${ResultFile}" ]; then
+		# if latest backup is older than 9 days then output date in red
+		HowOld="$(find "${ResultDir}" -maxdepth 1 -name com.apple.TimeMachine.Results.plist -mtime +8)"
+		if [ "X${HowOld}" = "X" ]; then
+			Highlight=""
+		else
+			Highlight="${LRED}"
+		fi
+
+		# check backup status
+		Status=$(grep -A1 RESULT "${ResultFile}" | grep integer | tr -d -c [:digit:])
+		TimeStamp=$(LANG=en_US.UTF-8 ls -l --time-style=locale "${ResultFile}" | cut -c 34-45)
+		case ${Status} in
+			0)
+				# Backup ok, Fuellstand pruefen
+				if [ "X${OKStatus}" = "XOK" ]; then
+					echo -e "\t${LGREEN}OK${NC}\t${Highlight}${TimeStamp}${NC}\t${SpaceUsage}${Snapshots}"
+				else
+					echo -e "\t${LRED}${OKStatus}${NC}\t${Highlight}${TimeStamp}${NC}\t${SpaceUsage}${Snapshots}"
+				fi
+				;;
+			*)
+				# Unbekannter Status
+				echo -e "\t${LRED}${BOLD}${Status}${NC}\t${Highlight}${TimeStamp}${NC}\t${SpaceUsage}${Snapshots}"
+				;;
+		esac
+	else
+		if [ -d "${ResultDir}" ]; then
+			TimeStamp=$(LANG=en_US.UTF-8 ls -ld --time-style=locale "${ResultDir}" | cut -c 28-39)
+			echo -e "\t${LRED}Not finished yet${NC}\t${TimeStamp}\t${SpaceUsage}${Snapshots}"
+		else
+			echo -e "\t${LRED}Not configured yet${NC}"
+		fi
+	fi
+} # ShowMachineStatus
+
+GenerateReport() {
+	# This function writes a status file that can be used by a Nagios compatible agent
+	# to report backup status. If MonitorString is set to veeam the Veeam-Backup-Plugin
+	# can be used at the monitoring server. All the monitoring agent has to do is to
+	# cat the contents of $MonitorLocation back to the monitoring server.
+
+	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
+	DetailsTmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
+	trap "rm \"${DetailsTmpFile}\" ; exit 0" 0 1 2 3 15
+	touch "${MonitorLocation}"
+	echo -e "<<<>>>\n<<<${MonitorString}_tapejobs>>>\nJobName JobID LastResult LastState" >${TmpFile}
+	echo -e "<<<${MonitorString}_jobs:sep(9)>>>" >>${TmpFile}
+
+	# generate overview
+	for i in "${ConfigDir}"/*.conf ; do
+		PrepareForMonitoring "${i}"
+	done
+
+	# add detailed backup status to tmp file and exchange status file
+	echo "" >>"${TmpFile}"
+	cat "${DetailsTmpFile}" >>"${TmpFile}"
+	rm "${MonitorLocation}"
+	mv "${TmpFile}" "${MonitorLocation}"
+} # GenerateReport
+
+PrepareForMonitoring() {
+	ConfigFile="${1}"
+	Config=${ConfigFile##*/}
+	Hostname="${Config%.conf}"
+	OKStatus="OK"
+
+	# check for name mismatch (config file and volume)
+	VolumeName=$(awk '/volname/ {print $2}' <"${ConfigFile}")
+	if [ "X${VolumeName}" = "X" ]; then
+		VolumeName="${Hostname}"
+	fi
+
+	ResultDir="/mnt/timemachine/${VolumeName}/${Hostname}.sparsebundle"
+	ResultFile="${ResultDir}/com.apple.TimeMachine.Results.plist"
+
+	# based on name of the Mac the time until latest finished backup is
+	# treated differently: On 'server' macs 2 days are allowed while on
+	# client machines it's 9 days
+
+	case ${VolumeName} in
+		mac-eficws)
+			MaxBackupAge=1
+			;;
+		mac-*)
+			MaxBackupAge=8
+			;;
+		*)
+			MaxBackupAge=1
+			;;
+	esac
+
+	# check backup age and status
+	if [ -f "${ResultFile}" ]; then
+		HowOld="$(find "${ResultDir}" -maxdepth 1 -name com.apple.TimeMachine.Results.plist -mtime +${MaxBackupAge})"
+		if [ "X${HowOld}" = "X" ]; then
+			BackupResult="Success"
+			BackupStatus="Stopped"
+		else
+			BackupResult="Failed"
+			BackupStatus="Too old"
+		fi
+		StartDate="$(date -r "${ResultDir}/com.apple.TimeMachine.MachineID.plist" "+%d.%m.%Y %H:%M:%S")"
+		EndDate="$(date -r "${ResultFile}" "+%d.%m.%Y %H:%M:%S")"
+		BytesCopied="$(grep -A1 'SnapshotTotalBytesCopied' "${ResultFile}" | grep integer | tr -c -d '[:digit:]')"
+	else
+		# we do not use "Working" by intention since we want the service in Check_MK being UNKNOWN and not OK
+		BackupStatus="Not finished yet" 
+		BackupResult="None"
+		StartDate="$(date -r "${ResultDir}/Info.plist" "+%d.%m.%Y %H:%M:%S")"
+		EndDate="01.01.1900 00:00:00"
+		BytesCopied=""
+	fi
+
+	# write summary
+	echo -e "${VolumeName}\tBackup\t${BackupStatus}\t${BackupResult}\t${StartDate}\t${EndDate}" >>"${TmpFile}"
+
+	# generate detailed report for mac servers (piggyback operation):
+	if [ ${MaxBackupAge} -eq 1 ]; then
+		VMName="$(echo "${VolumeName}" | sed -e 's/outdoor/srv-outdoor/')"
+		TotalSize=$(( $(df /mnt/timemachine/${VolumeName} | awk -F" " '/riesenpool/ {print $3}') * 1024 ))
+		echo -e "<<<<${VMName}>>>>\n<<<${MonitorString}_client:sep(9)>>>" >>"${DetailsTmpFile}"
+		echo -e "Status\t${BackupResult}\nJobName\t${VolumeName}\nTotalSizeByte\t${TotalSize}" >>"${DetailsTmpFile}"
+		echo -e "ReadSizeByte\t${BytesCopied}\nTransferedSizeByte\t${BytesCopied}" >>"${DetailsTmpFile}"
+		echo -e "StartTime\t${StartDate}\nStopTime\t${EndDate}\nDurationDDHHMMSS\t00:00:04:06" >>"${DetailsTmpFile}"
+		echo -e "AvgSpeedBps\t0\nDisplayName\t\nBackupServer\tdatengrab\n<<<<>>>>" >>"${DetailsTmpFile}"
+	fi
+} # PrepareForMonitoring
+
+case "${0}" in
+	*configure-netatalk*)
+		GenerateAFPConf $1
+		;;
+	*show-backup-status*)
+		ShowStatus
+		;;
+	*monitor-backups*)
+		GenerateReport
+		;;
+esac

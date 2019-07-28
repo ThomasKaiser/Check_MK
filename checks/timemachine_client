@@ -1,0 +1,170 @@
+#!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
+# +------------------------------------------------------------------+
+# |             ____ _               _        __  __ _  __           |
+# |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
+# |           | |   | '_ \ / _ \/ __| |/ /   | |\/| | ' /            |
+# |           | |___| | | |  __/ (__|   <    | |  | | . \            |
+# |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
+# |                                                                  |
+# | Copyright Mathias Kettner 2014             mk@mathias-kettner.de |
+# +------------------------------------------------------------------+
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+factory_settings["veeam_client"] = {
+    "age": (108000, 172800),  # 30h/2d
+}
+
+
+def parse_veeam_client(info):
+    data = {}
+    for line in info:
+        if line[0] == "Status":
+            if len(line) == 2:
+                last_status = line[1]
+            else:
+                # Prevent empty entries
+                last_status = False
+        elif line[0] == 'JobName':
+            if last_status:
+                last_found = line[1]
+                data[last_found] = {}
+                data[last_found]['Status'] = last_status
+        else:
+            if last_status and len(line) == 2:
+                data[last_found][line[0]] = line[1]
+    return data
+
+
+def inventory_veeam_client(parsed):
+    for job in parsed.keys():
+        yield job, {}
+
+
+def check_veeam_client(item, params, parsed):
+    # Fallback for old None item version
+    #FIXME Can be remvoed in CMK 2.0
+    if item is None and len(parsed) > 0:
+        item = parsed.keys()[0]
+
+    try:
+        data = parsed[item]
+    except KeyError:
+        return 3, "Client not found in agent output"
+
+    perfdata = []
+    infotexts = []
+
+    state = 0
+    # Append current Status to Output
+    if data['Status'] == 'Warning':
+        state = 1
+    if data['Status'] == 'Failed':
+        state = 2
+    infotexts.append("Status: %s" % data['Status'])
+
+    # Only output the Job name
+    if data.get('JobName'):
+        infotexts.append("Job: %s" % data['JobName'])
+
+    size_info = []
+    size_legend = []
+
+    TotalSizeByte = int(data['TotalSizeByte'])
+    perfdata.append(('totalsize', TotalSizeByte))
+    size_info.append(get_bytes_human_readable(TotalSizeByte))
+    size_legend.append("total")
+
+    # Output ReadSize and TransferedSize if available
+    if "ReadSizeByte" in data:
+        ReadSizeByte = int(data['ReadSizeByte'])
+        perfdata.append(('readsize', ReadSizeByte))
+        size_info.append(get_bytes_human_readable(ReadSizeByte))
+        size_legend.append("read")
+
+    if "TransferedSizeByte" in data:
+        TransferedSizeByte = int(data['TransferedSizeByte'])
+        perfdata.append(('transferredsize', TransferedSizeByte))
+        size_info.append(get_bytes_human_readable(TransferedSizeByte))
+        size_legend.append("transferred")
+
+    infotexts.append("Size (%s): %s" % ("/".join(size_legend), "/ ".join(size_info)))
+
+    # Bugged agent plugins were reporting . instead of : as separator for
+    # the time. This has been fixed in the agent, but be compatible to old agent.
+    timesep = ":"
+    if "StopTime" in data and timesep not in data['StopTime']:
+        timesep = "."
+
+    # Check Stop time in any case, that we can catch hanging backups
+    if "StopTime" not in data:
+        state = 2
+        infotexts.append("No complete Backup(!!)")
+    # If the Backup currently is running, the stop time is strange.
+    elif data['StopTime'] != "01.01.1900 00" + timesep + "00" + timesep + "00":
+        stop_time = time.mktime(
+            time.strptime(data['StopTime'], "%d.%m.%Y %H" + timesep + "%M" + timesep + "%S"))
+        now = time.time()
+        age = now - stop_time
+        warn, crit = params['age']
+        levels = ""
+        label = ""
+        if age >= crit:
+            state = 2
+            label = "(!!)"
+            levels = " (Warn/Crit: %s/%s)" % (get_age_human_readable(warn),
+                                              get_age_human_readable(crit))
+        elif age >= warn:
+            state = max(state, 1)
+            label = "(!)"
+            levels = " (Warn/Crit: %s/%s)" % (get_age_human_readable(warn),
+                                              get_age_human_readable(crit))
+        infotexts.append("Last backup: %s ago%s%s" % (get_age_human_readable(age), label, levels))
+
+    # Check duration only if currently not running
+    if data['Status'] not in ['InProgress', 'Pending']:
+        # Information may missing
+        if data.get('DurationDDHHMMSS'):
+            duration = 0
+            days, hours, minutes, seconds = map(int, data['DurationDDHHMMSS'].split(':'))
+            duration += seconds
+            duration += minutes * 60
+            duration += hours * 60 * 60
+            duration += days * 60 * 60 * 24
+            infotexts.append("Duration: %s" % get_age_human_readable(duration))
+            perfdata.append(('duration', duration))
+
+    if "AvgSpeedBps" in data:
+        avg_speed_bps = int(data['AvgSpeedBps'])
+        perfdata.append(('avgspeed', avg_speed_bps))
+        infotexts.append(("Average Speed: %s/s" % get_bytes_human_readable(avg_speed_bps)))
+
+    # Append backup server if available
+    if "BackupServer" in data:
+        infotexts.append("Backup server: %s" % data['BackupServer'])
+
+    return state, ", ".join(infotexts), perfdata
+
+
+check_info["veeam_client"] = {
+    'parse_function': parse_veeam_client,
+    'check_function': check_veeam_client,
+    'inventory_function': inventory_veeam_client,
+    'service_description': 'VEEAM Client %s',
+    'group': 'veeam_backup',
+    'default_levels_variable': 'veeam_client',
+    'has_perfdata': True,
+}
