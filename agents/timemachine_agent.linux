@@ -6,7 +6,8 @@ ServerName=tk-backup
 SharePrefix=/mnt/timemachine
 ConfigDir=/etc/tk-backup
 AFPConf=/usr/local/etc/afp.conf
-MonitorString="veeam"
+# MonitorString="veeam"
+MonitorString="timemachine"
 MonitorLocation=/var/run/backup-results.txt
 
 GenerateAFPConf() {

@@ -1,14 +1,12 @@
-title: Veeam Backup Jobs
-agents: windows
+title: TimeMachine Backup Jobs
+agents: linux
 catalog: os/storage
 license: GPL
 distribution: check_mk
 description:
- This check monitors the status of the backups jobs run by the Veeam
- backup tool. In order to carry out the check, the Veeam agent plugin
- needs to be installed on the backup server. See special instructions in the
- comment section of the two Veeam agent plugin scripts on how to install
- the scripts.
+ This check monitors the status of timemachine backup jobs run by Arts &
+ Others internal backup setup. It needs monitor-backups.sh running on the
+ TM server.
 
  This check is {OK} if the result of the backup is {Success} or the state
  of the backup is {Working}..
@@ -16,7 +14,7 @@ description:
  {UNKNOWN} in all other cases.
 
 inventory:
- A check will be created for all backup jobs run by the Veeam tool.
+ A check will be created for all TimeMachine backup jobs.
 
 item:
  The name of the backup job.

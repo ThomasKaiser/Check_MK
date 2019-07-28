@@ -24,7 +24,7 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-# <<<veeam_jobs:sep(9) >>>
+# <<<timemachine_jobs:sep(9) >>>
 # BACKUP_RIS      Backup  Stopped Success 27.10.2013 22:00:17     27.10.2013 22:06:12
 # BACKUP_R43-local_HXWH44 Backup  Stopped Success 26.10.2013 18:00:20     26.10.2013 18:46:03
 # BACKUP_R43-Pool4_HXWH44 Backup  Stopped Failed  26.10.2013 23:13:13     27.10.2013 00:51:17
@@ -36,11 +36,11 @@
 # BACKUP_R43-Pool2_HXWH44 Backup  Stopped Failed  27.10.2013 02:37:45     27.10.2013 02:45:35
 
 
-def inventory_veeam_jobs(info):
+def inventory_timemachine_jobs(info):
     return [(x[0], None) for x in info]
 
 
-def check_veeam_jobs(item, _no_params, info):
+def check_timemachine_jobs(item, _no_params, info):
     for line in info:
         if len(line) < 6:
             continue  # Skip incomplete lines
@@ -71,8 +71,8 @@ def check_veeam_jobs(item, _no_params, info):
             (job_last_state, job_last_result, job_creation_time, job_end_time, job_type)
 
 
-check_info["veeam_jobs"] = {
-    'check_function': check_veeam_jobs,
-    'inventory_function': inventory_veeam_jobs,
-    'service_description': 'VEEAM Job %s',
+check_info["timemachine_jobs"] = {
+    'check_function': check_timemachine_jobs,
+    'inventory_function': inventory_timemachine_jobs,
+    'service_description': 'TM Status %s',
 }
