@@ -89,8 +89,12 @@ print $1,$7,$5,$6,"0","0","0","0","0",$10,$8,$9,"0","0",$11,"0","0"; }'
 echo '<<<ps>>>'
 ps ax -o user,vsz,rss,pcpu,command | sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4) /'
 
-# NTP seems to be enabled as a default
-if which ntpq >/dev/null; then
+# macOS 10.13 and above use timed, older variants ntpd
+if [ -f /var/db/timed/com.apple.timed.plist ]; then
+    :
+    # TODO: parse /var/db/timed/com.apple.timed.plist and provide compatible output
+    # defaults read /var/db/timed/com.apple.timed TMSystemSource | grep TMTimeError | head -n1 | awk -F'"' '{print $2}'
+elif which ntpq >/dev/null; then
     echo '<<<ntp>>>'
     ntpq -np | sed -e 1,2d -e 's/^\(.\)/\1 /' -e 's/^ /%/'
 fi
