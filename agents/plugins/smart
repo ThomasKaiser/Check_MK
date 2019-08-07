@@ -152,10 +152,9 @@ if which smartctl > /dev/null 2>&1 ; then
             [ -n "$TEMP" ] && CMD="echo 194 Temperature_Celsius 0x0000 000 000 000 Old_age Always - $TEMP (0 0 0 0)"
             DNAME="${VEND}_${MODEL}_${SN}"
         else
-            CMD="smartctl -d ata -v 9,raw48 -A $D"
+            CMD="smartctl -v 9,raw48 -A $D"
         fi
-
-            [ -n "$CMD" ] && $CMD | grep Always | egrep -v '^190(.*)Temperature(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
+            [ -n "$CMD" ] && $CMD | sed -e 's/Offline/Always/' | grep Always | egrep -v '^190(.*)Temperature(.*)|^231(.*)Temperature(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
     done 2>/dev/null
 
 
