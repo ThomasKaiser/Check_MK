@@ -122,6 +122,7 @@ if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
     IFS=$OLD_IFS
 fi
 
+# Doesn't work since 10.14
 # if type tmutil >/dev/null
 # then
 #     echo '<<<timemachine>>>'
@@ -152,6 +153,27 @@ elif type osx-cpu-temp >/dev/null
 then
     echo '<<<lnx_thermal:sep(124)>>>'
     echo "CPU A PROXIMITY|enabled|thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|70000|passive|90000|critical"
+fi
+
+# Check SMART if smartmontools are installed, for NVME Check_MK 1.6 or above is needed
+if type smartctl >/dev/null
+then
+    echo '<<<smart>>>'
+    diskutil list | awk -F" " '/(internal)/ {print $1}' | while read ; do
+        DNAME="$(smartctl -d ata -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
+        if [ -n "${DNAME}" ]; then
+            # SATA
+            MODEL="$(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
+            smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|$DNAME ATA $MODEL |"
+        else
+            DNAME="$(smartctl -d nvme -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
+            if [ -n "${DNAME}" ]; then
+                # NVME
+                echo "$DNAME NVME $(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
+                smartctl -d nvme -A $REPLY | sed -e '1,5d; /^$/d'
+            fi
+        fi
+    done
 fi
 
 ###############################
