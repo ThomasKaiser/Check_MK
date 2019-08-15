@@ -159,7 +159,7 @@ fi
 if type smartctl >/dev/null
 then
     echo '<<<smart>>>'
-    diskutil list | awk -F" " '/(internal)/ {print $1}' | while read ; do
+    diskutil list | grep -v 'virtual)' | awk -F" " '/(internal)/ {print $1}' | while read ; do
         DNAME="$(smartctl -d ata -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
         if [ -n "${DNAME}" ]; then
             # SATA
@@ -176,12 +176,41 @@ then
     done
 fi
 
+# query security updates in Apt compatible way, check every 24 hours
+RestartNeeded=0
+echo '<<<apt:sep(0)>>>'
+IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime 1 2>/dev/null)
+if [ $? -ne 0 -o "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+	# file doesn't exist or is older than 24 hours: let's (re)create it
+	(softwareupdate -l 2>/dev/null | grep recommended >/var/run/de.arts-others.softwareupdatecheck) &
+fi
+if [ -s /var/run/de.arts-others.softwareupdatecheck ]; then
+	awk -F',' '{print $1}' </var/run/de.arts-others.softwareupdatecheck | \
+		sed -e 's/^	//' -e 's/\ .\ .$//' -e 's/\ /_/g' | while read ; do
+		# fake Ubuntu packet report style
+		echo "Inst ${REPLY} [10.1ubuntu2.5] (10.1ubuntu2.6 Ubuntu:18.04/bionic-security [amd64])"
+	done
+	# check for needed restarts
+	RestartNeeded=$(grep -c '\[restart\]' /var/run/de.arts-others.softwareupdatecheck)
+else
+	echo "No updates pending for installation"
+fi
+
+# Report reboot status since security updates might require a restart
+echo '<<<mrpe>>>'
+if [ ${RestartNeeded} -gt 1 ]; then
+	echo "(check_mk_agent.macosx) Reboot%20needed 1 WARN - ${RestartNeeded} pending security updates require a restart"
+elif [ ${RestartNeeded} -gt 0 ]; then
+	echo "(check_mk_agent.macosx) Reboot%20needed 1 WARN - 1 pending security update requires a restart"
+else
+	echo "(check_mk_agent.macosx) Reboot%20needed 0 OK - no reboot required"
+fi
+
 ###############################
 # Things up for takers:
 ###############################
 # *OSX SW Raid status
 # *launchctl daemon status
-# *hw sensors, how to query them?
 # *OSX Server specific stuff, LDAP, etc...
 # *Rewrite cpu / ps check to be faster - takes >1s on my laptop
 # ioreg -l zeigt etliche interessante Inventurdaten

@@ -154,7 +154,7 @@ if which smartctl > /dev/null 2>&1 ; then
         else
             CMD="smartctl -v 9,raw48 -A $D"
         fi
-            [ -n "$CMD" ] && $CMD | sed -e 's/Offline/Always/' | grep Always | egrep -v '^190(.*)Temperature(.*)|^231(.*)Temperature(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
+            [ -n "$CMD" ] && $CMD | grep -E "Offline|Always" | egrep -v '^190(.*)Temperature(.*)|^231(.*)Temperature(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
     done 2>/dev/null
 
 
