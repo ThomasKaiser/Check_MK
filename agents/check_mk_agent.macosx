@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Check_MK Agent for Mac OS/X
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
@@ -28,16 +28,33 @@
 
 # Remove locale settings to eliminate localized outputs where possible
 # Author: Christian Zigotzky <info@xenosoft.de>
+# Modified by Thomas Kaiser <t.kaiser@arts-others.de>
+
+# Remove locale settings to eliminate localized outputs where possible
 export LC_ALL=C
 unset LANG
 
-export MK_LIBDIR="/usr/lib/check_mk_agent"
-export MK_CONFDIR="/etc/check_mk"
+export MK_LIBDIR='/usr/local/lib/check_mk_agent'
+export MK_CONFDIR='/etc/check_mk'
+export MK_VARDIR='/var/lib/check_mk_agent'
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-# Optionally set a tempdir for all subsequent calls
-#export TMPDIR=
+# All executables in PLUGINSDIR will simply be executed and their
+# ouput appended to the output of the agent. Plugins define their own
+# sections and must output headers with '<<<' and '>>>'
+PLUGINSDIR=$MK_LIBDIR/plugins
 
-# close standard input (for security reasons) and stderr
+# All executables in LOCALDIR will by executabled and their
+# output inserted into the section <<<local>>>. Please
+# refer to online documentation for details about local checks.
+LOCALDIR=$MK_LIBDIR/local
+
+# All files in SPOOLDIR will simply appended to the agent
+# output if they are not outdated (see below)
+SPOOLDIR=$MK_VARDIR/spool
+
+# close standard input (for security reasons) and stderr when not
+# explicitly in debug mode.
 if [ "$1" = -d ]
 then
     set -xv
@@ -45,6 +62,100 @@ else
     exec <&- 2>/dev/null
 fi
 
+function run_mrpe() {
+    local descr=$1
+    shift
+    local cmdline=$*
+
+    echo '<<<mrpe>>>'
+
+    PLUGIN=${cmdline%% *}
+    OUTPUT=$(eval "$cmdline")
+
+    echo -n "(${PLUGIN##*/}) $descr $? $OUTPUT" | tr \\n \\1
+    echo
+}
+
+export -f run_mrpe
+
+# Runs a command asynchronous by use of a cache file. Usage:
+# run_cached [-s] NAME MAXAGE
+#   -s creates the section header <<<$NAME>>>
+#   -m mrpe-mode: stores exit code with the cache
+#   -ma mrpe-mode with age: stores exit code with the cache and adds the cache age
+#   NAME is the name of the section (also used as cache file name)
+#   MAXAGE is the maximum cache livetime in seconds
+function run_cached () {
+    local NOW
+    NOW=$(date +%s)
+    local section=
+    local mrpe=0
+    local append_age=0
+    # TODO: this function is unable to handle mulitple args at once
+    #       for example: -s -m won't work, it is read as single token "-s -m"
+    if [ "$1" = -s ] ; then local section="echo '<<<$2:cached($NOW,$3)>>>' ; " ; shift ; fi
+    if [ "$1" = -m ] ; then local mrpe=1 ; shift ; fi
+    if [ "$1" = "-ma" ] ; then local mrpe=1 ; local append_age=1 ; shift ; fi
+    local NAME=$1
+    local MAXAGE=$2
+    shift 2
+    local CMDLINE=$section$*
+
+    if [ ! -d "$MK_VARDIR/cache" ]; then mkdir -p "$MK_VARDIR/cache" ; fi
+    if [ "$mrpe" = 1 ] ; then
+        CACHEFILE="$MK_VARDIR/cache/mrpe_$NAME.cache"
+    else
+        CACHEFILE="$MK_VARDIR/cache/$NAME.cache"
+    fi
+
+    # Check if the creation of the cache takes suspiciously long and kill the
+    # process if the age (access time) of $CACHEFILE.new is twice the MAXAGE.
+    # Output the eventually already cached section anyways and start the cache
+    # update again.
+    if [ -e "$CACHEFILE.new" ] ; then
+        local CF_ATIME
+        CF_ATIME=$(stat -f %Sa -t %s "$CACHEFILE.new")
+        if [ $((NOW - CF_ATIME)) -ge $((MAXAGE * 2)) ] ; then
+            # Kill the process still accessing that file in case
+            # it is still running. This avoids overlapping processes!
+            fuser -k -9 "$CACHEFILE.new" >/dev/null 2>&1
+            rm -f "$CACHEFILE.new"
+        fi
+    fi
+
+    # Check if cache file exists and is recent enough
+    if [ -s "$CACHEFILE" ] ; then
+        local MTIME
+        MTIME=$(stat -f %SB -t %s "$CACHEFILE")
+        local AGE
+        AGE=$((NOW - MTIME))
+        if [ "$AGE" -le "$MAXAGE" ] ; then local USE_CACHEFILE=1 ; fi
+        # Output the file in any case, even if it is
+        # outdated. The new file will not yet be available
+        if [ $append_age -eq 1 ] ; then
+            # insert the cached-string before the pipe (first -e)
+            # or, if no pipe found (-e t) append it (third -e),
+            # but only once and on the second line (2!b) (first line is section header,
+            # all further lines are long output)
+            sed -e "2s/|/ (Cached: ${AGE}\/${MAXAGE}s)|/" -e t -e "2s/$/ (Cached: ${AGE}\/${MAXAGE}s)/" < "$CACHEFILE"
+        else
+            cat "$CACHEFILE"
+        fi
+    fi
+
+    # Cache file outdated and new job not yet running? Start it
+    if [ -z "$USE_CACHEFILE" ] && [ ! -e "$CACHEFILE.new" ] ; then
+        # When the command fails, the output is throws away ignored
+        if [ $mrpe -eq 1 ] ; then
+            echo "set -o noclobber ; exec > \"$CACHEFILE.new\" || exit 1 ; run_mrpe $NAME \"$CMDLINE\" && mv \"$CACHEFILE.new\" \"$CACHEFILE\" || rm -f \"$CACHEFILE\" \"$CACHEFILE.new\"" | nohup /bin/bash >/dev/null 2>&1 &
+        else
+            echo "set -o noclobber ; exec > \"$CACHEFILE.new\" || exit 1 ; $CMDLINE && mv \"$CACHEFILE.new\" \"$CACHEFILE\" || rm -f \"$CACHEFILE\" \"$CACHEFILE.new\"" | nohup /bin/bash >/dev/null 2>&1 &
+        fi
+    fi
+}
+
+# Make run_cached available for subshells (plugins, local checks, etc.)
+export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
@@ -217,15 +328,191 @@ fi
 
 
 # MK's Remote Plugin Executor
-if [ -e "/etc/mrpe.cfg" ]
+if [ -e "$MK_CONFDIR/mrpe.cfg" ]
 then
-    echo '<<<mrpe>>>'
-    grep -Ev '^[[:space:]]*($|#)' "/etc/mrpe.cfg" | \
+    grep -Ev '^[[:space:]]*($|#)' "$MK_CONFDIR/mrpe.cfg" | \
     while read descr cmdline
     do
-        PLUGIN=${cmdline%% *}
-        OUTPUT=$(eval "$cmdline")
-        echo "(${PLUGIN##*/}) $descr $? $OUTPUT" | tr \\n \\1
-        echo
+        interval=
+        args="-m"
+        # NOTE: Due to an escaping-related bug in some old bash versions
+        # (3.2.x), we have to use an intermediate variable for the pattern.
+        pattern='\(([^\)]*)\)[[:space:]](.*)'
+        if [[ $cmdline =~ $pattern ]]
+        then
+            parameters=${BASH_REMATCH[1]}
+            cmdline=${BASH_REMATCH[2]}
+
+            # split multiple parameter assignments
+            for par in $(echo "$parameters" | tr ":" "\n")
+            do
+                # split each assignment
+                key=$(echo "$par" | cut -d= -f1)
+                value=$(echo "$par" | cut -d= -f2)
+
+                if [ "$key" = "interval" ] ; then
+                    interval=$value
+                elif [ "$key" = "appendage" ] ; then
+                    args="-ma"
+                fi
+            done
+        fi
+
+        if [ -z "$interval" ]
+        then
+            run_mrpe "$descr" "$cmdline"
+        else
+            run_cached "$args" "$descr" "$interval" "$cmdline"
+        fi
     done
+fi
+
+# MK's runas Executor
+if [ -e "$MK_CONFDIR/runas.cfg" ]
+then
+    grep -Ev '^[[:space:]]*($|#)' "$MK_CONFDIR/runas.cfg" | \
+    while read type user include
+    do
+        if [ -d "$include" -o \( "$type" == "mrpe" -a -f "$include" \) ] ; then
+            PREFIX=""
+            if [ "$user" != "-" ] ; then
+                PREFIX="su $user -c "
+            fi
+
+            # mrpe includes
+            if [ "$type" == "mrpe" ] ; then
+                grep -Ev '^[[:space:]]*($|#)' "$include" | \
+                while read descr cmdline
+                do
+                    interval=
+                    # NOTE: Due to an escaping-related bug in some old bash
+                    # versions (3.2.x), we have to use an intermediate variable
+                    # for the pattern.
+                    pattern='\(([^\)]*)\)[[:space:]](.*)'
+                    if [[ $cmdline =~ $pattern ]]
+                    then
+                        parameters=${BASH_REMATCH[1]}
+                        cmdline=${BASH_REMATCH[2]}
+
+                        # split multiple parameter assignments
+                        for par in $(echo "$parameters" | tr ":" "\n")
+                        do
+                            # split each assignment
+                            IFS='=' read key value <<< $par
+                            if [ "$key" = "interval" ]
+                            then
+                                interval=$value
+                            # no other parameters supported currently
+                            fi
+                        done
+                    fi
+
+                    if [ -n "$PREFIX" ] ; then
+                        cmdline="$PREFIX\'$cmdline\'"
+                    fi
+                    if [ -z "$interval" ]
+                    then
+                        run_mrpe "$descr" "$cmdline"
+                    else
+                        run_cached -m "$descr" "$interval" "$cmdline"
+                    fi
+                done
+
+            # local and plugin includes
+            elif [ "$type" == "local" -o "$type" == "plugin" ] ; then
+                if [ "$type" == "local" ] ; then
+                    echo "<<<local>>>"
+                fi
+
+                find "$include" -executable -type f | \
+                while read filename
+                do
+                    if [ -n "$PREFIX" ] ; then
+                        cmdline="$PREFIX\"$filename\""
+                    else
+                        cmdline=$filename
+                    fi
+
+                    $cmdline
+                done
+            fi
+        fi
+    done
+fi
+
+function is_valid_plugin () {
+    # NOTE: Due to an escaping-related bug in some old bash versions
+    # (3.2.x), we have to use an intermediate variable for the pattern.
+    pattern='\.dpkg-(new|old|temp)$'
+    #TODO Maybe we should change this mechanism
+    # shellcheck disable=SC2015
+    [[ -f "$1" && -x "$1" && ! "$1" =~ $pattern ]] && true || false
+}
+
+# Local checks
+if cd "${LOCALDIR}" ; then
+    echo '<<<local>>>'
+    for skript in ./*; do
+        if is_valid_plugin "$skript"; then
+            ./"$skript"
+        fi
+    done
+    # Call some plugins only every X'th second
+    for skript in [1-9]*/* ; do
+        if is_valid_plugin "$skript"; then
+            run_cached "local_${skript//\//\\}" "${skript%/*}" "$skript"
+        fi
+    done
+fi
+
+# Plugins
+if cd "${PLUGINSDIR}"; then
+    for skript in ./*; do
+        if is_valid_plugin "$skript"; then
+            ./"$skript"
+        fi
+    done
+    # Call some plugins only every Xth second
+    for skript in [1-9]*/* ; do
+        if is_valid_plugin "$skript"; then
+            run_cached "plugins_${skript//\//\\}" "${skript%/*}" "$skript"
+        fi
+    done
+fi
+
+# Agent output snippets created by cronjobs, etc.
+if [ -d "${SPOOLDIR}" ]
+then
+    pushd "${SPOOLDIR}" > /dev/null
+    now=$(date +%s)
+
+    for file in *
+    do
+        test "$file" = "*" && break
+        # output every file in this directory. If the file is prefixed
+        # with a number, then that number is the maximum age of the
+        # file in seconds. If the file is older than that, it is ignored.
+        maxage=""
+        part="$file"
+
+        # Each away all digits from the front of the filename and
+        # collect them in the variable maxage.
+        while [ "${part/#[0-9]/}" != "$part" ]
+        do
+            maxage=$maxage${part:0:1}
+            part=${part:1}
+        done
+
+        # If there is at least one digit, than we honor that.
+        if [ "$maxage" ] ; then
+            mtime=$(stat -f %SB -t %s "$file")
+            if [ $((now - mtime)) -gt "$maxage" ] ; then
+                continue
+            fi
+        fi
+
+        # Output the file
+        cat "$file"
+    done
+    popd > /dev/null
 fi
