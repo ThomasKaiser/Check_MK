@@ -59,7 +59,8 @@ if [ "$1" = -d ]
 then
     set -xv
 else
-    exec <&- 2>/dev/null
+    :
+    # exec <&- 2>/dev/null
 fi
 
 function run_mrpe() {
@@ -126,7 +127,7 @@ function run_cached () {
     # Check if cache file exists and is recent enough
     if [ -s "$CACHEFILE" ] ; then
         local MTIME
-        MTIME=$(stat -f %SB -t %s "$CACHEFILE")
+        MTIME=$(stat -f %Sm -t %s "$CACHEFILE")
         local AGE
         AGE=$((NOW - MTIME))
         if [ "$AGE" -le "$MAXAGE" ] ; then local USE_CACHEFILE=1 ; fi
@@ -505,7 +506,7 @@ then
 
         # If there is at least one digit, than we honor that.
         if [ "$maxage" ] ; then
-            mtime=$(stat -f %SB -t %s "$file")
+            mtime=$(stat -f %Sm -t %s "$file")
             if [ $((now - mtime)) -gt "$maxage" ] ; then
                 continue
             fi

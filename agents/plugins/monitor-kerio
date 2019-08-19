@@ -1,0 +1,181 @@
+#!/bin/bash
+#
+# Checkmk plugin to monitor a Kerio Connect instance
+#
+# by Thomas Kaiser <t.kaiser@arts-others.de> with some inspiration 
+# from check_kerio_connect_stats.sh by Jedda Wignall http://jedda.me
+# https://github.com/jedda/OSX-Monitoring-Tools/
+#
+# The script expects root readable Kerio API access credentials in
+# /etc/kerio-credentials and will use API access to query count of
+# messages in the mail queue and storage usage. Also systemd is
+# queried about start time of the daemon and whether it's active.
+#
+# Failure of the above will result in status WARN or CRIT.
+#
+# Then Kerio's stats.dat will be parsed for various counters and the
+# usual performance tresholds can be applied to get any of these
+# counters WARN or CRIT. It's a good idea to reset statistics every
+# night by a cron job that reads like https://pastebin.com/833Pi6M7
+#
+# 0 0 * * * /usr/local/sbin/reset-kerio-stats.sh 
+#
+# I used the MRPE report variant since I like spaces in service names.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+
+# START CONFIG SECTION
+# The local path to your kerio connect mailstore. Change if different
+kerioStore="/opt/kerio/mailserver"
+# put your kerio admin url.
+kerioAdminURL="https://your.url.here:4040"
+# username and password have to be stored in a secured file /etc/kerio-credentials
+credentialPermissions="$(ls -la /etc/kerio-credentials | awk -F" " '{print $1}')"
+case ${credentialPermissions} in
+	*------)
+		read kerioCredentials </etc/kerio-credentials
+		kerioAdminUser="$(cut -f1 -d: <<<"${kerioCredentials}")"
+		kerioAdminPass="$(cut -f2 -d: <<<"${kerioCredentials}")"
+		;;
+	*)
+		echo '/etc/kerio-credentials must only be readable by root. Aborting.' >&2
+		exit 1
+		;;
+esac
+MTAName="Kerio" # set to Postfix to let Kerio services show up similar to postfix
+# END CONFIG SECTION
+
+# create secure cookie file
+CookieFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
+
+# query kerio for token/cookie
+login=$(curl --cookie "${CookieFile}" --cookie-jar "${CookieFile}" -k -X POST -H "Content-type: application/json" \
+-d '{"jsonrpc": "2.0","id": 1,"method": "Session.login","params": {"userName": "'$kerioAdminUser'","password": "'$kerioAdminPass'","application": {"name": "Statistics Reset","vendor": "jedda.me","version": "1.0.0"}}}
+' -silent ${kerioAdminURL}/admin/api/jsonrpc)
+token=$(echo $login | sed 's/\\\\\//\//g' | sed 's/[{}]//g' | awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | sed 's/\"\:\"/\|/g' | sed 's/[\,]/ /g' | sed 's/\"//g' | grep -w token | awk -F '|' '{ print $3 }')
+
+# query count of pending mails in queue
+queue=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc":"2.0","id":1,"method":"Queue.get","params":{"query":{"fields":[]}}}' -silent ${kerioAdminURL}/admin/api/jsonrpc)
+countOfStuckMessages=$(echo "${queue}" | tr '"' '\n' | grep -A1 'totalItems' | tr -c -d '[:digit:]')
+if [ $countOfStuckMessages -ge 10 ]; then
+	checkResult=2
+elif [ $countOfStuckMessages -ge 2 ]; then
+	checkResult=1
+else
+	checkResult=0
+fi
+echo '<<<mrpe>>>'
+echo "(${0##*/}) ${MTAName}%20Queue ${checkResult} ${countOfStuckMessages} in queue | kerio_queue=${countOfStuckMessages}"
+
+# check Kerio health
+echo '<<<mrpe>>>'
+
+# query systemd about daemon start time
+SystemdStartTime="$(systemctl status kerio-connect.service | awk -F" " '/Active:/ {print $5" "$6" "$7" "$8}' | sed 's/;$//')"
+if [ -n "${SystemdStartTime}" ]; then
+	# systemd start time exists
+	StartTime=$(date -d "${SystemdStartTime}" "+%s")
+	TimeNow=$(date "+%s")
+	TimeDiff=$(( ${TimeNow} - ${StartTime} ))
+	if [ ${TimeDiff} -le 259200 ]; then
+		# round uptime to one digit if less than 3 days
+		RunningSince=$(awk -F" " '{printf ("%0.1f",$1/86400); }' <<<${TimeDiff})
+	else
+		RunningSince=$(awk -F" " '{printf ("%0.0f",$1/86400); }' <<<${TimeDiff})
+	fi
+	# query Kerio Statistics
+	statistics=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc":"2.0","id":1,"method":"Statistics.get","params":{}}' -silent ${kerioAdminURL}/admin/api/jsonrpc)
+StorageOccupation=$(echo "${statistics}" | tr '"' '\n' | grep -A2 percentage | tr -c -d '[:digit:]')
+	if [ -n "${StorageOccupation}" ]; then
+		echo "(${0##*/}) ${MTAName}%20status 0 Status: the Kerio mail system is running, ${RunningSince} days, ${StorageOccupation}% storage used | kerio_uptime=$(( ${TimeDiff} / 86400 ))"
+	else
+		echo "(${0##*/}) ${MTAName}%20status 2 Kerio does not report back to statistics query"
+	fi
+else
+	# No systemd daemon information
+	echo "(${0##*/}) ${MTAName}%20status 1 systemd reports the daemon as not being active"
+fi
+
+# process statistics
+StatsFile=${kerioStore}/stats.dat
+for Query in "mtaReceivedMessages:Nachrichten%20empfangen:mails per day:;2000;4000" \
+	"mtaTransmittedMessages:Nachrichten%20versandt:mails per day:;2000;4000" \
+	"mtaRelayMessages:Nachrichten%20relayed:mails per day:;2000;4000" \
+	"mtaLocalMessages:Nachrichten%20lokal:mails per day:;2000;4000" \
+	"mtaReceivedVolume:Daten%20empfangen:MB per day" \
+	"mtaTransmittedVolume:Daten%20versandt:MB per day" \
+	"mtaRelayVolume:Daten%20relayed:MB per day" \
+	"mtaLocalVolume:Daten%20lokal:MB per day" \
+	"mtaReceivedRecipients:Empfaenger%20eingehend:recipients per day" \
+	"mtaTransmittedRecipients:Empfaenger%20ausgehend:recipients per day" \
+	"mtaRelayRecipients:Empfaenger%20relayed:recipients per day" \
+	"mtaLocalRecipients:Empfaenger%20lokal:recipients per day" \
+	"SMTPAuthFailed:SMTP%20Anmeldefehler:attempts per day:;200;400" \
+	"IMAPAuthFailed:IMAP%20Anmeldefehler:attempts per day:;200;400" \
+	"MarkedAsJunk:Als%20Junk%20markiert:mails per day" \
+	"mtaSpamTagged:Als%20Spam%20markiert:mails per day" \
+	"HTTPConnections:HTTP%20Verbindungen:connections per day" \
+	"IMAPConnections:IMAP%20Verbindungen:connections per day" \
+	"SMTPConnections:SMTP%20Verbindungen:connections per day" \
+	"mtaFailedSoft:MTA%20Soft%20Failures:failures per day:;3;30" \
+	"mtaFailedHard:MTA%20Hard%20Failures:failures per day:;;1" \
+	"mtaLoopsDetected:Mail%20Loops:loops per day:;;1" \
+	"mtaLargestSize:Maximale%20Mailgroesse%20in%20MB:MByte" ; do
+	grepPattern="$(cut -f1 -d: <<<"${Query}")"
+	serviceName="$(cut -f2 -d: <<<"${Query}")"
+	unit="$(cut -f3 -d: <<<"${Query}")"
+	warncrit="$(cut -f4 -d: <<<"${Query}")"
+	searchResult=$(grep "${grepPattern}" "${StatsFile}" | sed 's/\s*<.*>\(.*\)<.*>/\1/' | tr -c -d '[:digit:]')
+
+	case ${unit} in
+		MB*)
+			resultValue=$(( ${searchResult} / 1048576 ))
+			FloatValue=$(awk -F" " '{printf ("%0.1f",$1/1048576); }' <<<${searchResult})
+			;;
+		KB*)
+			resultValue=$(( ${searchResult} / 1024 ))
+			FloatValue=$(awk -F" " '{printf ("%0.1f",$1/1024); }' <<<${searchResult})
+			;;
+		*)
+			resultValue=${searchResult}
+			FloatValue=${searchResult}
+			;;
+	esac
+
+	checkResult=0
+	if [ -n ${warncrit} ]; then
+		# redefine checkResult based on values
+		warnLevel=$(cut -f2 -d';' <<<"${warncrit}")
+		if [ "X${warnLevel}" = "X" ]; then
+			warnLevel=10000000
+		fi
+		critLevel=$(cut -f3 -d';' <<<"${warncrit}")
+		if [ "X${critLevel}" = "X" ]; then
+			critLevel=10000000
+		fi
+		if [ ${resultValue} -ge ${critLevel} ]; then
+			checkResult=2
+		elif [ ${resultValue} -ge ${warnLevel} ]; then
+			checkResult=1
+		fi
+	fi
+
+	echo '<<<mrpe>>>'
+	echo "(${0##*/}) Kerio%20${serviceName} ${checkResult} ${FloatValue} ${unit} | ${grepPattern}=${resultValue}${warncrit}"
+done
+
+# logout
+(sleep 3 ; logout=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc": "2.0","id": 1, "method": "Session.logout"}' -silent ${kerioAdminURL}/admin/api/jsonrpc) ; rm "${CookieFile}" ) &
