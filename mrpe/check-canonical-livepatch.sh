@@ -10,6 +10,9 @@
 # - if running is not true this is CRIT
 # - if patchState is neither 'nothing-to-apply' nor 'applied' this is CRIT
 #
+# In mrpe.cfg define like this for example:
+# Canonical%20Live%20Patch (interval=3600) /usr/lib/check_mk_agent/check-canonical-livepatch.sh
+#
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
 #
