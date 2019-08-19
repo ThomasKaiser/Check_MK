@@ -1,0 +1,178 @@
+#!/bin/bash
+#
+# Parse JSS for computer records and query them for available software updates
+#
+# by Thomas Kaiser <t.kaiser@arts-others.de>
+#
+# Needs to run on a managed macOS host to read out the JSS URL and xmlstarlet
+# to parse the XML from JSS API. Logon credentials for API access need to be
+# put in /etc/jss-credentials (onyl readable by root!)
+#
+# Idea is that a couple of Macs are servers and are already monitored in
+# Checkmk. We use 2 smartgroups to differentiate between those and normal
+# clients that are not monitored directly.
+# - $AllMacsID defines the ID of a smartgroup containing all Macs
+# - $ClientsID defines the ID of a smartgroup only containing clients
+# - the difference between both groups will be treated as 'servers'
+#
+# 'servers' get an own service called "Software Updates" via Checkmk's
+# piggyback mechanism. The 'client' macs appear each as an individual
+# service "Software Updates $hostname" on the host this check runs on.
+#
+# I used the MRPE report variant since I like spaces in service names.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+# check xmlstarlet, if not installed get it with your package manager
+# of choice for example via 'brew install xmlstarlet' on macOS.
+type xmlstarlet >/dev/null 2>&1 || \
+	(echo 'xmlstarlet not available. Aborting.' >&2 ; exit 1)
+
+credentialPermissions="$(ls -la /etc/jss-credentials | awk -F" " '{print $1}')"
+case ${credentialPermissions} in
+	*------)
+		read jssCredentials </etc/jss-credentials
+		;;
+	*)
+		echo '/etc/jss-credentials must only be readable by root. Aborting.' >&2
+		exit 1
+		;;
+esac
+
+# get JSS URL, works only on a managed client. if you run this on an unmanagend
+# host provide jssURL="https://your.jss.url:8443/" instead
+jssURL="$(defaults read /Library/Preferences/com.jamfsoftware.jamf.plist jss_url)"
+
+# define IDs of the smart groups containing all macs and those that are only clients
+AllMacsID=1
+ClientsID=152
+
+# Get time now
+TimeNow=$(date "+%s")
+
+# define checks as functions
+CheckSoftwareUpdates() {
+	# check when last 'jamf recon' was running on the client
+	LastReportDate=$(( $(curl -H "Accept: application/xml" -sfku ${jssCredentials} \
+		${jssURL}JSSResource/computers/id/${1} | xmlstarlet sel -T -t -m /computer/general \
+		-v report_date_epoch -n -) / 1000 ))
+	TimeDiff=$(( ${TimeNow} - ${LastReportDate} ))
+	if [ ${TimeDiff} -gt 1209600 ]; then
+		ReportStatus="$(( ${TimeDiff} / 604800 )) weeks old"
+	elif [ ${TimeDiff} -gt 86400 ]; then
+		ReportStatus="$(( ${TimeDiff} / 86400 )) days old"
+	elif [ ${TimeDiff} -gt 7200 ]; then
+		ReportStatus="$(( ${TimeDiff} / 3600 )) hours old"
+	else
+		ReportStatus="$(( ${TimeDiff} / 60 )) minutes old"
+	fi
+	# check whether software updates are pending
+	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computers/id/${1} \
+		| xmlstarlet sel -T -t -m /computer/software/available_software_updates -v name -n - \
+		| sed '/^$/d' >"${TmpFile}"
+		echo '<<<mrpe>>>'
+		if [ -s "${TmpFile}" ]; then
+			# if there are updates pending report them with status WARN and use the count
+			# as performance data to generate graphs. Helps identifying lazy users...
+			CountOfUpdates=$(wc -l <"${TmpFile}" | tr -d '[:space:]')
+			echo "(${0##*/}) Software%20Updates%20${2} 1 WARN - ${CountOfUpdates} updates pending ($(sed 's/-$//' <"${TmpFile}" | tr "\n" "," | sed -e 's/,/, /g' -e 's/,\ $//'), ${ReportStatus})|updates_pending=${CountOfUpdates}"
+		else
+			if [ ${TimeDiff} -ge 432000 ]; then
+				# if last recon is 5 days ago switch to status UNKNOWN
+				echo "(${0##*/}) Software%20Updates%20${2} 3 UNKNOWN - outdated report (${ReportStatus})|updates_pending=0"
+			else
+				echo "(${0##*/}) Software%20Updates%20${2} 0 OK - no updates pending (${ReportStatus})|updates_pending=0"
+			fi
+		fi
+} # CheckSoftwareUpdates
+
+# define search for machines (old and primitive attempt)
+HardcodedBruteForce() {
+	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX)"
+	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
+
+	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computers \
+	| xmlstarlet sel -T -t -m /computers/computer -v "concat(id,' ',name)" -n - | while read ; do
+		set $REPLY
+		ComputerID="$1"
+		ComputerName="$2"
+		case ${ComputerName} in
+			# name pattern to look for
+			mac-eficws|srv-efi|outdoor|noah|share|caramel|autopkg|odr|odm|ais)
+				# piggybacked mode
+				echo "<<<<${ComputerName}>>>>"
+				CheckSoftwareUpdates ${ComputerID}
+				echo "<<<<>>>>"
+				;;
+			mac-*|mini-lab|jss)
+				CheckSoftwareUpdates ${ComputerID} ${ComputerName}
+				;;
+		esac
+	done
+} # HardcodedBruteForce
+
+# new attempt uses smart groups 1 (all macs) and 152 (clients) and processes clients
+# directly and the difference between both groups as piggybacked servers.
+# Piggybacked servers will get a service "Software Updates" directly while all other
+# Macs will appear as services "Software Updates $hostname" on the host this check runs
+# on (though you can piggyback this as well, see comments below)
+SearchByGroups() {
+	TmpDir="$(mktemp -d /tmp/${0##*/}.XXXXXX)"
+	trap "rm -rf \"${TmpDir}\" ; exit 0" 0 1 2 3 15
+	
+	ListAllMacs="${TmpDir}/all-macs"
+	ListClients="${TmpDir}/client-macs"
+	TmpFile="${TmpDir}/host-results"
+
+	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computergroups/id/${AllMacsID} \
+		| xmlstarlet sel -T -t -m /computer_group/computers/computer -v "concat(id,' ',name)" -n - >"${ListAllMacs}"
+	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computergroups/id/${ClientsID} \
+		| xmlstarlet sel -T -t -m /computer_group/computers/computer -v "concat(id,' ',name)" -n - >"${ListClients}"
+
+	# check results. If empty then report status "JSS Health" as CRIT
+	echo '<<<mrpe>>>'
+	if [ -s "${ListAllMacs}" ]; then
+		echo "(${0##*/}) JSS%20Health 0 OK - JSS seems to be running fine"
+		# parse clients only and generate service below this host
+		cat "${ListClients}" | while read ; do
+			set $REPLY
+			ComputerID="$1"
+			ComputerName="$2"
+			# echo "<<<<jss>>>>" <-- set this if you want to appear these services on host 'jss'
+			CheckSoftwareUpdates ${ComputerID} ${ComputerName}
+			# echo "<<<<>>>>" <-- Needed for piggybacked operation
+		done
+		
+		# process difference between both lists as servers for piggyback operation
+		cat "${ListAllMacs}" "${ListClients}" | sort | uniq -u | while read  ; do
+			set $REPLY
+			ComputerID="$1"
+			ComputerName="$2"
+			echo "<<<<${ComputerName}>>>>"
+			CheckSoftwareUpdates ${ComputerID}
+			echo "<<<<>>>>"
+		done
+	else
+		echo "(${0##*/}) JSS%20Health 0 CRIT - can not access list of all Macs"
+	fi
+} # SearchByGroups
+
+if [ -z "${jssCredentials}" -o -z "${jssURL}" ]; then
+	echo 'Can not access JSS credentials and/or get JSS API URL. Aborting.' >&2
+	exit 1
+else
+	# HardcodedBruteForce
+	SearchByGroups
+fi

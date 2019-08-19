@@ -98,7 +98,7 @@ if [ -n "${SystemdStartTime}" ]; then
 	fi
 	# query Kerio Statistics
 	statistics=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc":"2.0","id":1,"method":"Statistics.get","params":{}}' -silent ${kerioAdminURL}/admin/api/jsonrpc)
-StorageOccupation=$(echo "${statistics}" | tr '"' '\n' | grep -A2 percentage | tr -c -d '[:digit:]')
+	StorageOccupation=$(echo "${statistics}" | tr '"' '\n' | grep -A2 percentage | tr -c -d '[:digit:]')
 	if [ -n "${StorageOccupation}" ]; then
 		echo "(${0##*/}) ${MTAName}%20status 0 Status: the Kerio mail system is running, ${RunningSince} days, ${StorageOccupation}% storage used | kerio_uptime=$(( ${TimeDiff} / 86400 ))"
 	else
