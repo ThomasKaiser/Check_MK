@@ -1,0 +1,82 @@
+#!/bin/bash
+#
+# Checkmk plugin to monitor various city temperatures via API access
+# on openweathermap.org. You need a free account there to get an API
+# access token called AppID. This ID must be stored only root readable
+# in /etc/openweathermap-appid 
+#
+# Then you need to know the ID of the city in question, for example
+# 3035268 --> Balaruc
+# 2953436 --> Bad Homburg
+# 2867714 --> Muenchen
+# 2911288 --> Hamburg-Mitte
+#
+# city.list.json.gz from http://bulk.openweathermap.org/sample/ is
+# the place to look up those IDs.
+#
+# Since free API accounts can only query like 50 times per hour you
+# better run these checks only every 5 to 10 minutes.
+#
+# Each city temperature will be available as lnx_thermal check. Plugin
+# output will look like this for example:
+#
+# <<<lnx_thermal:sep(124)>>>
+# Balaruc|enabled|thermal|26740|30000|passive|40000|critical
+# Bad Homburg|enabled|thermal|24050|30000|passive|40000|critical
+# Muenchen|enabled|thermal|31490|30000|passive|40000|critical
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+# temperature tresholds in degree celsius:
+WARNTEMP=30
+CRITTEMP=40
+
+cd /tmp
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+if type links >/dev/null 2>&1 ; then
+	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
+	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
+	echo '<<<lnx_thermal:sep(124)>>>'
+else
+	"No links binary available. Add it via the package manager of your choice"
+	exit 1
+fi
+
+appIDPermissions="$(ls -la /etc/openweathermap-appid | awk -F" " '{print $1}')"
+case ${appIDPermissions} in
+	*------)
+		read appID </etc/openweathermap-appid
+		;;
+	*)
+		echo '/etc/openweathermap-appid must only be readable by root. Aborting.' >&2
+		exit 1
+		;;
+esac
+
+for City in "3035268:Balaruc" "2953436:Bad Homburg" "2867714:Muenchen" ; do
+	CityID="$(cut -f1 -d: <<<"${City}")"
+	CityName="$(cut -f2 -d: <<<"${City}")"
+	# query weather API
+	links -http.fake-user-agent \
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15' \
+	-dump "https://api.openweathermap.org/data/2.5/weather?id=${CityID}&appid=${appID}&mode=html" >"${TmpFile}"
+	RawTemp=$(awk -F" " '/C$/ {print $1}' <"${TmpFile}" | sed -e 's/.C$//' -e 's/DE//')
+	Temp=$(bc <<<"${RawTemp} * 1000" | cut -d. -f1)
+	if [ "X${Temp}" != "X" ]; then
+		# only return value if not empty
+		echo "${CityName}|enabled|thermal|${Temp}|${WARNTEMP}000|passive|${CRITTEMP}000|critical"
+	fi
+done
