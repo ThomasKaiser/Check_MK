@@ -60,20 +60,21 @@ case $(hostname) in
 		echo $(( ${SMBUser} + ${AFPUser} ))
 		;;
 	ais)
-		# List filemaker users
+		# List filemaker users, the credentials for accessing fmsadmin need to be
+		# put into a file /etc/filemaker-credentials in the form $user:$password
 		credentialPermissions="$(ls -la /etc/filemaker-credentials | awk -F" " '{print $1}')"
 		case ${credentialPermissions} in
 			*------)
-				read kerioCredentials </etc/filemaker-credentials
-				fmpuser="$(cut -f1 -d: <<<"${kerioCredentials}")"
-				fmpassword="$(cut -f2 -d: <<<"${kerioCredentials}")"
+				read FilemakerCredentials </etc/filemaker-credentials
+				fmuser="$(cut -f1 -d: <<<"${FilemakerCredentials}")"
+				fmpassword="$(cut -f2 -d: <<<"${FilemakerCredentials}")"
 				;;
 			*)
-				echo '/etc/kerio-credentials must only be readable by root. Aborting.' >&2
+				echo '/etc/filemaker-credentials must only be readable by root. Aborting.' >&2
 				exit 1
 				;;
 		esac
-		FMCount=$(fmsadmin -u fms -p ${fmpassword} LIST CLIENTS | grep -c -v '^Client')
+		FMCount=$(fmsadmin -u ${fmuser} -p ${fmpassword} LIST CLIENTS | grep -c -v '^Client')
 		echo '<<<logins>>>'
 		echo ${FMCount}
 		;;
