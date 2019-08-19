@@ -7,10 +7,14 @@
 #
 # Logon credentials have to be provided in /etc/filemaker-credentials
 # in the form $user:$password. The file should only be readable by root.
-
+#
+# If the tool returns with an exit code 0 returned status is WARN if
+# zero databases are open, otherwise status is OK and count of open
+# databases is used as performance counter. If the tool returns with any
+# other exit code status returned is CRITICAL.
 #
 # In mrpe.cfg define like this for example:
-# Filemaker%20Server (interval=3600) /usr/lib/check_mk_agent/check-filemaker-server.sh
+# Filemaker%20Server (interval=600) /usr/local/lib/check_mk_agent/check-filemaker-server.sh
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
