@@ -1,0 +1,97 @@
+#!/bin/bash
+#
+# Checkmk plugin to monitor users of a specific application as 'logins'.
+# We misuse Checkmk's logins mechanism (count of interactive users logged
+# into a Unix/Linux/macOS host) to get the amount of users logged in to
+# a filemaker server or a Helios Ethershare/PCShare server or Netatalk
+# or Samba.
+#
+# The plugin is meant to be deployed on all hosts and based on hostname
+# a list of logins will be returned or not.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+case $(hostname) in
+	sun)
+		# local EtherShare and PCShare users
+		read HELIOSDIR </etc/HELIOSInstallPath
+		LocalCount=$(${HELIOSDIR}/bin/swho | egrep "^pcshare|^afpsrv" | wc -l | tr -d '[:space:]')
+		echo '<<<logins>>>'
+		echo ${LocalCount}
+		# webshare users via piggyback reported to the server hosting the
+		# websharewoa server (so you know when you can reboot this machine)
+		WebShareCount=$(${HELIOSDIR}/bin/swho | egrep "^websharesrv" | wc -l | tr -d '[:space:]')
+		echo '<<<<webshare>>>>'
+		echo '<<<logins>>>'
+		echo ${WebShareCount}
+		echo '<<<<>>>>'
+		;;
+	datengrab|kronos)
+		# Netatalk users (TimeMachine clients)
+		TMCount=$(macusers | grep -c -v "^PID")
+		echo '<<<logins>>>'
+		echo ${TMCount}
+		;;
+	buster)
+		# Samba users
+		SambaCount=$(smbstatus -p | egrep "^([0-9]| +[0-9])" | wc -l)
+		echo '<<<logins>>>'
+		echo ${SambaCount}
+		;;
+	osxserver)
+		# MacOS X server: AFP and SMB user
+		SMBUser=$(/usr/sbin/serveradmin fullstatus smb | awk -F" = " '/smb:currentConnections/ {print $2}')
+		AFPUser=$(/usr/sbin/serveradmin fullstatus afp | awk -F" = " '/afp:currentConnections/ {print $2}')
+		echo '<<<logins>>>'
+		echo $(( ${SMBUser} + ${AFPUser} ))
+		;;
+	ais)
+		# List filemaker users
+		credentialPermissions="$(ls -la /etc/filemaker-credentials | awk -F" " '{print $1}')"
+		case ${credentialPermissions} in
+			*------)
+				read kerioCredentials </etc/filemaker-credentials
+				fmpuser="$(cut -f1 -d: <<<"${kerioCredentials}")"
+				fmpassword="$(cut -f2 -d: <<<"${kerioCredentials}")"
+				;;
+			*)
+				echo '/etc/kerio-credentials must only be readable by root. Aborting.' >&2
+				exit 1
+				;;
+		esac
+		FMCount=$(fmsadmin -u fms -p ${fmpassword} LIST CLIENTS | grep -c -v '^Client')
+		echo '<<<logins>>>'
+		echo ${FMCount}
+		;;
+	dokuwiki)
+		# TODO: monitor active wiki users
+		:
+		# With whoisonline plugin '~~whoisonline:NOSHOW~~' embedded in pages
+		# will result in /var/www/dokuwiki/lib/plugins/whoisonline/online.txt
+		# looking like this: [{"login":"tk","timeseen":1565711848,"display":"tk"}]
+		;;
+	monit)
+		# count VPN users, to put into 300 directory. We do a ping scan in the
+		# IP ranges of user and admin VPN accounts to generate total VPN users
+		# that get reported piggybacked to the firewall host
+		VPNCount=$(for i in 64 84 ; do nmap -sP 10.0.${i}.0/24; done | grep -c "Nmap scan report")
+		echo '<<<<pfsense>>>>'
+		echo '<<<logins>>>'
+		echo ${VPNCount}
+		echo '<<<<>>>>'
+		;;		
+esac
