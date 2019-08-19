@@ -115,7 +115,7 @@ if [ -n "${SystemdStartTime}" ]; then
 	KerioVersion=$(CheckVersion | sed 's/\.$//')
 	# check subscription expiration
 	ExpireDate="$(grep "^Subscription-Expires" ${kerioStore}/license/license.key | tail -n1 | awk -F": " '{print $2}')"
-	if [ -n ""${ExpireDate}"" ]; then
+	if [ -n "${ExpireDate}" ]; then
 		ExpireDateInSeconds=$(date -d "${ExpireDate}" "+%s")
 	else
 		ExpireDateInSeconds=${TimeNow}
