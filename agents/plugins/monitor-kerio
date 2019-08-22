@@ -60,16 +60,6 @@ esac
 MTAName="Kerio" # set to Postfix to let Kerio services show up similar to postfix
 # END CONFIG SECTION
 
-# functions
-CheckVersion() {
-	# check for updates the stupid way since not figured out how to do this via API
-	Serverconfig="${kerioStore}/mailserver.cfg"
-	for CheckString in RemoteUpgradeVersionMajor RemoteUpgradeVersionMinor RemoteUpgradeVersionRevision ; do
-		searchResult=$(grep "${CheckString}" "${Serverconfig}" | sed 's/\s*<.*>\(.*\)<.*>/\1/' | tr -c -d '[:digit:]')
-		echo -n "${searchResult}."
-	done
-} # CheckVersion
-
 # create secure cookie file
 CookieFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
 
@@ -102,6 +92,7 @@ if [ -n "${SystemdStartTime}" ]; then
 	StartTime=$(date -d "${SystemdStartTime}" "+%s")
 	TimeNow=$(date "+%s")
 	TimeDiff=$(( ${TimeNow} - ${StartTime} ))
+	UptimeGraph=$(awk -F" " '{printf ("%0.3f",$1/86400); }' <<<${TimeDiff})
 	if [ ${TimeDiff} -le 259200 ]; then
 		# round uptime to one digit if less than 3 days
 		RunningSince=$(awk -F" " '{printf ("%0.1f",$1/86400); }' <<<${TimeDiff})
@@ -111,8 +102,6 @@ if [ -n "${SystemdStartTime}" ]; then
 	# query Kerio Statistics
 	statistics=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc":"2.0","id":1,"method":"Statistics.get","params":{}}' -silent ${kerioAdminURL}/admin/api/jsonrpc)
 	StorageOccupation=$(echo "${statistics}" | tr '"' '\n' | grep -A2 percentage | tr -c -d '[:digit:]')
-	# check kerio version
-	KerioVersion=$(CheckVersion | sed 's/\.$//')
 	# check subscription expiration
 	ExpireDate="$(grep "^Subscription-Expires" ${kerioStore}/license/license.key | tail -n1 | awk -F": " '{print $2}')"
 	if [ -n "${ExpireDate}" ]; then
@@ -124,9 +113,9 @@ if [ -n "${SystemdStartTime}" ]; then
 		# Querying Kerio statistics worked, now check whether subscription expires soon
 		ExpireDiffInDays=$(( $(( ${ExpireDateInSeconds} - ${TimeNow} )) / 86400 ))
 		if [ ${ExpireDiffInDays} -ge 60 ]; then
-			echo "(${0##*/}) ${MTAName}%20status 0 Status: Kerio ${KerioVersion} is running, ${RunningSince} days, ${StorageOccupation}% storage used | kerio_uptime=$(( ${TimeDiff} / 86400 ))"
+			echo "(${0##*/}) ${MTAName}%20status 0 Status: Kerio is running, ${RunningSince} days, ${StorageOccupation}% storage used | kerio_uptime=${UptimeGraph}"
 		else
-			echo "(${0##*/}) ${MTAName}%20status 1 Kerio ${KerioVersion} is running, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=$(( ${TimeDiff} / 86400 ))"
+			echo "(${0##*/}) ${MTAName}%20status 1 Kerio is running, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=${UptimeGraph}"
 		fi
 	else
 		echo "(${0##*/}) ${MTAName}%20status 2 Kerio does not report back to statistics query"
