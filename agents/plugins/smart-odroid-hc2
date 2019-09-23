@@ -1,0 +1,64 @@
+#!/bin/bash
+# +------------------------------------------------------------------+
+# |             ____ _               _        __  __ _  __           |
+# |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
+# |           | |   | '_ \ / _ \/ __| |/ /   | |\/| | ' /            |
+# |           | |___| | | |  __/ (__|   <    | |  | | . \            |
+# |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
+# |                                                                  |
+# | Copyright Mathias Kettner 2014             mk@mathias-kettner.de |
+# +------------------------------------------------------------------+
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+#
+# Modified by Thomas Kaiser to work with an ODROID HC2 (JMS578 USB SATA)
+
+# Only handle always updated values, add device path and vendor/model
+if which smartctl > /dev/null 2>&1 ; then
+	echo '<<<smart>>>'
+	SEEN=
+	for D in /dev/disk/by-id/ata-*; do
+		[ "$D" != "${D%scsi-\*}" ] && continue
+		[ "$D" != "${D%ata-\*}" ] && continue
+		[ "$D" != "${D%-part*}" ] && continue
+		N=$(readlink $D)
+		N=${N##*/}
+		VEND=ATA
+		MODEL=$(smartctl -a -d sat $D | grep -i "device model" | sed -e "s/.*:[ ]*//g" -e "s/\ /_/g")
+		# Excluded disk models for SAN arrays or certain RAID luns that are also not usable..
+		if [ "$MODEL" = "iSCSI_Disk" -o "$MODEL" = "LOGICAL_VOLUME" ]; then
+			continue
+		fi
+
+		# Avoid duplicate entries for same device
+		if [ "${SEEN//.$N./}" != "$SEEN" ] ; then
+			continue
+		fi
+		SEEN="$SEEN.$N."
+
+		# strip device name for final output
+		DNAME=${D#/dev/disk/by-id/scsi-}
+		DNAME=${DNAME#/dev/disk/by-id/ata-}
+
+		# create temp file to reset command_timeout count from 3 to 0
+		TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX)"
+		trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
+		smartctl -v 9,raw48 -d sat -A $D >"${TmpFile}"
+		grep -E "Offline|Always" "${TmpFile}" | egrep -v '^190(.*)Temperature(.*)|^231(.*)Temperature(.*)|^188(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
+		grep "^188" "${TmpFile}" | sed 's/3$/0/' | sed "s|^|$DNAME $VEND $MODEL |"
+	done # 2>/dev/null
+else
+	echo "ERROR: smartctl not found" >&2
+fi
