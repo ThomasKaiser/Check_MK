@@ -40,7 +40,7 @@ fi
 checkState="$(awk -F": " '/checkState/ {print $2}' <"${TmpFile}")"
 patchState="$(awk -F": " '/patchState/ {print $2}' <"${TmpFile}")"
 kernelVersion="$(awk -F": " '/kernel/ {print $2}' <"${TmpFile}")"
-patchVersion="$(awk -F": " '/ version/ {print $2}' <"${TmpFile}" | tr -d '[="=]')"
+patchVersion="$(awk -F": " '/ version:/ {print $2}' <"${TmpFile}" | tr -d '[="=]')"
 isRunning="$(awk -F": " '/ running/ {print $2}' <"${TmpFile}")"
 
 Result="OK"

@@ -89,8 +89,8 @@ CheckSoftwareUpdates() {
 			CountOfUpdates=$(wc -l <"${TmpFile}" | tr -d '[:space:]')
 			echo "(${0##*/}) Software%20Updates%20${2} 1 WARN - ${CountOfUpdates} updates pending ($(sed 's/-$//' <"${TmpFile}" | tr "\n" "," | sed -e 's/,/, /g' -e 's/,\ $//'), ${ReportStatus})|updates_pending=${CountOfUpdates}"
 		else
-			if [ ${TimeDiff} -ge 432000 ]; then
-				# if last recon is 5 days ago switch to status UNKNOWN
+			if [ ${TimeDiff} -ge 777600 ]; then
+				# if last recon is 9 days ago switch to status UNKNOWN
 				echo "(${0##*/}) Software%20Updates%20${2} 3 UNKNOWN - outdated report (${ReportStatus})|updates_pending=0"
 			else
 				echo "(${0##*/}) Software%20Updates%20${2} 0 OK - no updates pending (${ReportStatus})|updates_pending=0"

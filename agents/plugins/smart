@@ -157,6 +157,34 @@ if which smartctl > /dev/null 2>&1 ; then
             [ -n "$CMD" ] && $CMD | grep -E "Offline|Always" | egrep -v '^190(.*)Temperature(.*)|^231(.*)Temperature(.*)' | sed "s|^|$DNAME $VEND $MODEL |"
     done 2>/dev/null
 
+	# SAS disks
+    SEEN=
+    for D in /dev/disk/by-path/*-sas-*-lun-0; do
+        N=$(readlink $D)
+        N=${N##*/}
+        if [ -r /sys/block/$N/device/vendor ]; then
+            VEND=$(tr -d ' ' < /sys/block/$N/device/vendor)
+        fi
+        if [ -r /sys/block/$N/device/model ]; then
+            MODEL=$(sed -e 's/ /_/g' -e 's/_*$//g' < /sys/block/$N/device/model)
+        fi
+
+        # Avoid duplicate entries for same device
+        if [ "${SEEN//.$N./}" != "$SEEN" ] ; then
+            continue
+        fi
+        SEEN="$SEEN.$N."
+
+        TEMP=0
+		# create temperature output as expected by checks/smart
+		# this is a hack, TODO: change checks/smart to support SAS disks
+		eval `smartctl -d scsi -i -A $D | while read a b c d e ; do
+			[ "$a" == Serial ] && echo SN=$c
+			[ "$a" == Current -a "$b" == Drive  -a "$c" == Temperature: ] && echo TEMP=$d
+		done`
+		DNAME="${VEND}_${MODEL}_${SN}"
+		echo "194 Temperature_Celsius 0x0000 000 000 000 Old_age Always - $TEMP (0 0 0 0)" | sed "s|^|$DNAME $VEND $MODEL |"
+    done 2>/dev/null
 
     # Call MegaRaid submodule if conditions are met
     if type MegaCli >/dev/null 2>&1; then
