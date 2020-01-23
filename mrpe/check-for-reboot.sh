@@ -38,6 +38,12 @@ if [ -f /var/run/reboot-required ]; then
 				ExitCode=0
 				Summary="kernel live patching enabled"
 				;;
+			WARNING*)
+				# Live Patching works but last check failed (e.g. due to
+				# Canonical servers not reachable or something like this)
+				ExitCode=0
+				Summary="kernel live patching enabled, last check failed"
+				;;
 			*)
 				# Live Patching failed
 				ExitCode=2

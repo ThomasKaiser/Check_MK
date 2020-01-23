@@ -148,7 +148,7 @@ for Query in "mtaReceivedMessages:Nachrichten%20empfangen:mails per day:;2000;40
 	"SMTPConnections:SMTP%20Verbindungen:connections per day" \
 	"mtaFailedSoft:MTA%20Soft%20Failures:failures per day:;3;30" \
 	"mtaFailedHard:MTA%20Hard%20Failures:failures per day:;;1" \
-	"mtaLoopsDetected:Mail%20Loops:loops per day:;;1" \
+	"mtaLoopsDetected:Mail%20Loops:loops per day:;;5" \
 	"mtaLargestSize:Maximale%20Mailgroesse%20in%20MB:MByte" ; do
 	grepPattern="$(cut -f1 -d: <<<"${Query}")"
 	serviceName="$(cut -f2 -d: <<<"${Query}")"
