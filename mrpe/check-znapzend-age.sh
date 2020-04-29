@@ -11,7 +11,7 @@
 # $3 is the critical treshold in hours, e.g. 48
 #
 # So put something like this in your mrpe.conf:
-# Znapzend%20fileserver (interval=600) /usr/lib/check_mk_agent/check-znapzend-age.sh zfs/crypt/fileserver 24 48
+# Znapzend%20fileserver /usr/lib/check_mk_agent/check-znapzend-age.sh zfs/crypt/fileserver 24 48
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -41,6 +41,7 @@ Main() {
 
 	Difference=$(( ${TimeNow} - ${LastSnapshot} ))
 	DifferenceInHours=$(( ${Difference} / 3600 ))
+	DifferenceInMinutes=$(( ${Difference} / 60 ))
 	
 	# check tresholds
 	if [ ${DifferenceInHours} -gt $3 ]; then
@@ -53,9 +54,9 @@ Main() {
 	
 	# format output nicely (report minutes when less than 2 hours)
 	if [ ${DifferenceInHours} -lt 2 ] ; then
-		echo "Last snapshot happened $(( ${Difference} / 60 )) minutes ago"
+		echo "Last snapshot happened ${DifferenceInMinutes} minutes ago | snapshot_age=${DifferenceInMinutes}"
 	else
-		echo "Last snapshot happened ${DifferenceInHours} hours ago"
+		echo "Last snapshot happened ${DifferenceInHours} hours ago | snapshot_age=${DifferenceInMinutes}"
 	fi
 	exit ${ExitCode}
 } # Main
