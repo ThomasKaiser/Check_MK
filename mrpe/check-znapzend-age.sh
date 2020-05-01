@@ -2,16 +2,28 @@
 #
 # check-znapzend-age.sh
 #
-# MRPE check for Nagios, Check_MK and others to monitor the
-# age of ZFS snapshots. The script needs to be called with 3
-# parameters:
+# MRPE check for Check_MK to monitor the age of ZFS snapshots
+# on a specific dataset. Works locally as well as on the target
+# storage of Znapzend, zrep, sanoid, etc. syncs.
+#
+# The script needs to be called with 3 parameters:
 #
 # $1 is the dataset in question, e.g. zfs/crypt/fileserver
-# $2 is the warning treshold in hours, e.g. 24
-# $3 is the critical treshold in hours, e.g. 48
+# $2 is the warning treshold in hours, e.g. 2
+# $3 is the critical treshold in hours, e.g. 24
 #
 # So put something like this in your mrpe.conf:
-# Znapzend%20fileserver /usr/lib/check_mk_agent/check-znapzend-age.sh zfs/crypt/fileserver 24 48
+# Znapzend%20Fileserver /usr/lib/check_mk_agent/check-znapzend-age.sh zfs/crypt/fileserver 2 24
+#
+# The check provides also graph data as $snapshot_age. If the WARN
+# treshold is less than 24 hours then $snapshot_age will be submitted
+# as minutes, otherwise as hours.
+#
+# This bash script has been written as a q&d replacement of
+# https://github.com/asciiphil/check_znapzend since I ran too
+# often in python dependency hell. In case you want to switch
+# from the former be aware that you need to adjust order of
+# arguments and time formats.
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -30,6 +42,11 @@
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 Main() {
+	if [ $# -ne 3 ]; then
+		echo "UNKN - the check needs to be called with 3 arguments, check the script header for details"
+		exit 3
+	fi
+
 	TimeNow=$(date "+%s")
 	LastSnapshot=$(GetLastSnapshot $1)
 
@@ -42,11 +59,16 @@ Main() {
 	Difference=$(( ${TimeNow} - ${LastSnapshot} ))
 	DifferenceInHours=$(( ${Difference} / 3600 ))
 	DifferenceInMinutes=$(( ${Difference} / 60 ))
+	if [ $2 -lt 24 ]; then
+		SnapshotAge=${DifferenceInMinutes}
+	else
+		SnapshotAge=${DifferenceInHours}
+	fi
 	
 	# check tresholds
-	if [ ${DifferenceInHours} -gt $3 ]; then
+	if [ ${DifferenceInHours} -ge $3 ]; then
 		ExitCode=2
-	elif [ ${DifferenceInHours} -gt $2 ]; then
+	elif [ ${DifferenceInHours} -ge $2 ]; then
 		ExitCode=1
 	else 
 		ExitCode=0
@@ -54,9 +76,9 @@ Main() {
 	
 	# format output nicely (report minutes when less than 2 hours)
 	if [ ${DifferenceInHours} -lt 2 ] ; then
-		echo "Last snapshot happened ${DifferenceInMinutes} minutes ago | snapshot_age=${DifferenceInMinutes}"
+		echo "Last snapshot happened ${DifferenceInMinutes} minutes ago | snapshot_age=${SnapshotAge}"
 	else
-		echo "Last snapshot happened ${DifferenceInHours} hours ago | snapshot_age=${DifferenceInMinutes}"
+		echo "Last snapshot happened ${DifferenceInHours} hours ago | snapshot_age=${SnapshotAge}"
 	fi
 	exit ${ExitCode}
 } # Main
