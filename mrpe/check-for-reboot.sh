@@ -29,9 +29,9 @@
 
 if [ -f /var/run/reboot-required ]; then
 	# reboot needed?
-	if [ -f ${0##*/}/check-canonical-livepatch.sh ]; then
+	if [ -f ${0%/*}/check-canonical-livepatch.sh ]; then
 		# Canonical Live Patching deployed
-		LivePatchStatus="$(${0##*/}/check-canonical-livepatch.sh)"
+		LivePatchStatus="$(${0%/*}/check-canonical-livepatch.sh)"
 		case ${LivePatchStatus} in
 			OK*)
 				# Live Patching works
@@ -50,16 +50,29 @@ if [ -f /var/run/reboot-required ]; then
 				Summary="kernel live patching failed. Reboot required"
 				;;
 		esac
-	else
-		Packages="$(tr '\n' ',' </var/run/reboot-required.pkgs | sed -e 's/,/, /g' -e 's/,\ $//')"
-		OlderThanOneDay=$(find /var/run/reboot-required -mtime +1)
-		if [ "X${OlderThanOneDay}" = "X" ]; then
-			ExitCode=1
-			Summary="some packages require a reboot (${Packages})"
+	fi
+	# check whether there are other than kernel packages that require a reboot
+	grep -q -v "linux-base" /var/run/reboot-required.pkgs 2>/dev/null
+	if [ $? -eq 0 ]; then
+		if [ ${ExitCode} -eq 2 ]; then
+			# kernel live patching already failed, we need to reboot anyway
+			Packages="$(sort </var/run/reboot-required.pkgs | uniq | tr '\n' ',' | sed -e 's/,/, /g' -e 's/,\ $//')"
+			Summary="kernel live patching failed and some packages require a reboot (${Packages})"
 		else
-			ExitCode=2
-			Summary="some packages require a reboot since more than 1 day (${Packages})"
+			# No kernel update involved, just regular packages like e.g. dbus require a reboot
+			Packages="$(grep -v "linux-base" /var/run/reboot-required.pkgs | sort | uniq | tr '\n' ',' | sed -e 's/,/, /g' -e 's/,\ $//')"
+			OlderThanOneDay=$(find /var/run/reboot-required -mtime +1)
+			if [ "X${OlderThanOneDay}" = "X" ]; then
+				ExitCode=1
+				Summary="some packages require a reboot (${Packages})"
+			else
+				ExitCode=2
+				Summary="some packages require a reboot since more than 1 day (${Packages})"
+			fi
 		fi
+	else
+		ExitCode=1
+		Summary="List of packages from /var/run/reboot-required.pkgs can not be retrieved"
 	fi
 else
 	ExitCode=0
