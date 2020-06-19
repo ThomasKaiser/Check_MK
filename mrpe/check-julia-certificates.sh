@@ -51,7 +51,7 @@ ShowUsage()
 
 ParseCertificates() {
 	# generate a tab separated list of certificates only containing the
-	# email address and expiration date in days
+	# email address and expiration date in seconds since epoch
 	for file in "${CERT_DIR}"/* ; do
 		ExpirationDate="$(openssl x509 -enddate -noout -in ${file} 2>/dev/null | awk -F"=" '/notAfter/ {print $2}')"
 		ExpirationDateInSeconds=$(date "+%s" -d "${ExpirationDate}")
@@ -69,7 +69,7 @@ CheckCertificates() {
 		# search for address in list, filter for 2nd row and extract highest
 		# number (latest expiration date in case more than one cert exists)
 		ExpirationDate=$(grep "^${eMailAddress}" "${TmpFile}" | cut -f2 | sort -n | tail -n1)
-		ExpirationDiff=$(( $(( ${ExpirationDate} - ${TimeNow} )) / 86400 ))
+		ExpirationDiff=$(( $(( ${ExpirationDate} - ${TimeNow} - 43200 )) / 86400 ))
 
 		# if $OBFUSCATE=TRUE then obfuscate email address
 		if [ "X${OBFUSCATE}" = "XTRUE" ]; then
@@ -77,17 +77,25 @@ CheckCertificates() {
 			eMailAddress="xxx@${Domain}"
 		fi
 
-		# format expiration string nicely
-		if [ ${ExpirationDiff} -eq 1 ]; then
-			TimeUnit="day"
-		else
-			TimeUnit="days"
+		# print expiration notice if about to expire or already expired
+		if [ ${ExpirationDiff} -le ${WARN_LIMIT} ]; then
+			if [ ${ExpirationDiff} -eq 0 ]; then
+				echo -e "${eMailAddress} expires today, \c"
+			elif [ ${ExpirationDiff} -eq 1 ]; then
+				echo -e "${eMailAddress} expires within 24 hours, \c"
+			elif [ ${ExpirationDiff} -gt 1 ]; then
+				echo -e "${eMailAddress} expires in ${ExpirationDiff} days, \c"
+			elif [ ${ExpirationDiff} -eq -1 ]; then
+				echo -e "${eMailAddress} expired within last 24 hours, \c"
+			else
+				echo -e "${eMailAddress} expired $(( ${ExpirationDiff} * -1 )) days ago, \c"
+			fi
 		fi
+
+		# set exit code accordingly to differentiate between CRIT and WARN
 		if [ ${ExpirationDiff} -le ${CRIT_LIMIT} ]; then
-			echo -e "${eMailAddress} ${ExpirationDiff} ${TimeUnit}, \c"
 			echo -e "ExitCode\t2" >>"${TmpFile}"
 		elif [ ${ExpirationDiff} -le ${WARN_LIMIT} ]; then
-			echo -e "${eMailAddress} ${ExpirationDiff} ${TimeUnit}, \c"
 			echo -e "ExitCode\t1" >>"${TmpFile}"
 		else
 			echo -e "ExitCode\t0" >>"${TmpFile}"
