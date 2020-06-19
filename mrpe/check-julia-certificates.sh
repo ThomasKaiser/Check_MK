@@ -15,8 +15,8 @@
 # will be part of the check's status output.
 #
 # In mrpe.cfg define like this for example:
-# Our%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 10 -c 2 -d /opt/julia/etc/SWISSSIGN/certs
-# Public%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 10 -c 2 -d /opt/julia/etc/public -o
+# Our%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/SWISSSIGN/certs
+# Public%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/public -o
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -31,12 +31,6 @@
 # License along with GNU Make; see the file  COPYING.  If  not,  write
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
-
-# defaults, not active since check for at least 3 arguments is in place
-CERT_DIR=/opt/julia/etc/certs
-WARN_LIMIT=10
-CRIT_LIMIT=2
-OBFUSCATE=TRUE
 
 ShowUsage()
 {
@@ -80,13 +74,13 @@ CheckCertificates() {
 		# print expiration notice if about to expire or already expired
 		if [ ${ExpirationDiff} -le ${WARN_LIMIT} ]; then
 			if [ ${ExpirationDiff} -eq 0 ]; then
-				echo -e "${eMailAddress} expires today, \c"
-			elif [ ${ExpirationDiff} -eq 1 ]; then
 				echo -e "${eMailAddress} expires within 24 hours, \c"
+			elif [ ${ExpirationDiff} -eq 1 ]; then
+				echo -e "${eMailAddress} expires within 48 hours, \c"
 			elif [ ${ExpirationDiff} -gt 1 ]; then
 				echo -e "${eMailAddress} expires in ${ExpirationDiff} days, \c"
 			elif [ ${ExpirationDiff} -eq -1 ]; then
-				echo -e "${eMailAddress} expired within last 24 hours, \c"
+				echo -e "${eMailAddress} expired within last 36 hours, \c"
 			else
 				echo -e "${eMailAddress} expired $(( ${ExpirationDiff} * -1 )) days ago, \c"
 			fi
@@ -134,20 +128,20 @@ TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
 
 # process certificates
 ParseCertificates
-# CountOfCerts=$(wc -l <"${TmpFile}")
+CountOfCerts=$(wc -l <"${TmpFile}")
 Summary="$(CheckCertificates | sed -e 's/,\ $//')"
 CountOfExpiringCerts=$(tr ',' '\n' <<< "${Summary}" | wc -l)
 ExitCode=$(grep "^ExitCode" "${TmpFile}" | cut -f2 | sort -n | tail -n1)
 
 case ${ExitCode} in
 	0)
-		echo "OK - no certificates to expire soon | expiring_certificates=0"
+		echo "OK - no certificates to expire soon | expiring_certificates=0 | total_certificates=${CountOfCerts}"
 		;;
 	1)
-		echo "WARN - ${Summary} | expiring_certificates=${CountOfExpiringCerts}"
+		echo "WARN - ${Summary} | expiring_certificates=${CountOfExpiringCerts} | total_certificates=${CountOfCerts}"
 		;;
 	2)
-		echo "CRIT - ${Summary} | expiring_certificates=${CountOfExpiringCerts}"
+		echo "CRIT - ${Summary} | expiring_certificates=${CountOfExpiringCerts} | total_certificates=${CountOfCerts}"
 		;;
 esac
 
