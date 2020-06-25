@@ -29,7 +29,7 @@
 
 if [ -f /var/run/reboot-required ]; then
 	# reboot needed?
-	if [ -f ${0%/*}/check-canonical-livepatch.sh ]; then
+	if [ -f ${0%/*}/check-canonical-livepatch.sh -a -x /snap/bin/canonical-livepatch ]; then
 		# Canonical Live Patching deployed
 		LivePatchStatus="$(${0%/*}/check-canonical-livepatch.sh)"
 		case ${LivePatchStatus} in
