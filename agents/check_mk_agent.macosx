@@ -161,7 +161,7 @@ export -f run_cached
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
 echo '<<<check_mk>>>'
-echo Version: 1.5.0p20
+echo Version: 1.6.0p12
 echo AgentOS: macosx $osver
 
 echo '<<<df>>>'
@@ -281,7 +281,7 @@ then
             DNAME="$(smartctl -d nvme -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
             if [ -n "${DNAME}" ]; then
                 # NVME
-                echo "$DNAME NVME $(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
+                echo "${REPLY} NVME $(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
                 smartctl -d nvme -A $REPLY | sed -e '1,5d; /^$/d'
             fi
         fi
