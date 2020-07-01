@@ -194,7 +194,8 @@ tr -d ' '` | bc
 
 # macOS version of lnx_if.
     echo '<<<lnx_if>>>'
-    interfaces=$(networksetup -listallhardwareports | grep -E -A1 "Thunderbolt|Ethernet|Wi-Fi" | awk -F": " '/^Device/ {print $2}' | sort)
+    # collect only information from active interfaces
+    interfaces=$(networksetup -listnetworkserviceorder | tr -d ')' | awk -F": " '/Hardware Port/ {print $3}' | sort | while read ; do ifconfig ${REPLY} >/dev/null 2>&1 && echo ${REPLY}; done)
     counter=0
     echo "[start_iplink]"
     while read -r eth; do
@@ -214,10 +215,16 @@ tr -d ' '` | bc
     #   Note: Wifi interfaces may have variable speeds each call
     for eth in $interfaces; do
         cur_ifconfig=$(ifconfig -v "$eth")
-        speed=$(echo "$cur_ifconfig" | grep -E "^\s*(down)?link rate:\s*" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
-        addr=$(echo "$cur_ifconfig" | grep -E '^\s*ether' | cut -d " " -f2)
+        # if interface is of type Wi-Fi then report maxRate instead of link rate
+        grep -q 'type: Wi-Fi' <<<"$cur_ifconfig"
+        if [ $? -eq 0 ]; then
+            speed="$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/A/Resources/airport "$eth" -I | awk -F": " '/maxRate/ {print $2}').00Mb/s"
+        else
+            speed=$(grep -E "^\s*(down)?link rate:\s*" <<<"$cur_ifconfig" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
+        fi
+        addr=$(grep -E '^\s*ether' <<<"$cur_ifconfig" | cut -d " " -f2)
         link_detected=no
-        if echo "$cur_ifconfig" | grep -E 'status:\s*active' > /dev/null || [ "$eth" = "lo0" ]; then
+        if grep -E 'status:\s*active' <<<"$cur_ifconfig" > /dev/null || [ "$eth" = "lo0" ]; then
           link_detected=yes
         fi
 
