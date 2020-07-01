@@ -160,9 +160,7 @@ export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
-echo '<<<check_mk>>>'
-echo Version: 1.6.0p12
-echo AgentOS: macosx $osver
+echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nAgentOS: macosx $osver"
 
 echo '<<<df>>>'
 df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | sed 1d | \
@@ -185,9 +183,7 @@ echo "SwapFree: $(echo "( $compressedpages - $(vm_stat | grep "occupied by compr
 # FIXME: Just call vm_stat here, write a check plugin that uses that
 # native output of vm_stat
 
-echo '<<<uptime>>>';
-echo `date +%s` - `sysctl -n kern.boottime | cut -d' ' -f 4,7 | tr ',' '.' |
-tr -d ' '` | bc
+echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
 # checks plugins with subchecks for parsing that output. Maybe reduce
 # the output size by grepping away totally useless parts
@@ -528,7 +524,7 @@ fi
 # Agent output snippets created by cronjobs, etc.
 if [ -d "${SPOOLDIR}" ]
 then
-    pushd "${SPOOLDIR}" > /dev/null
+    pushd "${SPOOLDIR}" > /dev/null || exit 1
     now=$(date +%s)
 
     for file in *
