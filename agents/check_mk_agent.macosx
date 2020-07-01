@@ -163,10 +163,27 @@ osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nAgentOS: macosx $osver"
 
 echo '<<<df>>>'
-df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | sed 1d | \
-while read DEV REST; do
-    TYPE=$(diskutil info "$DEV" | grep '^\s*Type' | cut -d: -f2 | tr -d '[:space:]')
-    echo "$DEV $TYPE $REST"
+df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
+	sed 1d | while read ; do
+	set ${REPLY}
+	DeviceNode=$1
+	shift
+	DiskSize=$1
+	shift
+	UsedKB=$1
+	shift
+	AvailableKB=$1
+	shift
+	Percentage=$1
+	shift
+	MountPoint="$@"
+	if [ $(( ${UsedKB} + ${AvailableKB} )) -eq ${DiskSize} ]; then
+		# it's HFS+
+		echo "${DeviceNode} hfs ${DiskSize} ${UsedKB} ${AvailableKB} ${Percentage} ${MountPoint}"
+	else
+		# it's APFS, we need to divide used kb from disk size since otherwise Check_MK calculates wrongly
+		echo "${DeviceNode} apfs ${DiskSize} ${UsedKB} $(( ${DiskSize} - ${UsedKB} )) ${Percentage} ${MountPoint}"
+	fi
 done
 
 echo '<<<cpu>>>';
