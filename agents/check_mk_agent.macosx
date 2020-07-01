@@ -30,6 +30,8 @@
 # Author: Christian Zigotzky <info@xenosoft.de>
 # Modified by Thomas Kaiser <t.kaiser@arts-others.de>
 
+renice 19 $BASHPID >/dev/null 2>&1
+
 # Remove locale settings to eliminate localized outputs where possible
 export LC_ALL=C
 unset LANG
@@ -187,8 +189,7 @@ df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/
 done
 
 echo '<<<cpu>>>';
-echo `sysctl -n vm.loadavg | tr -d '{}'` `top -l 1 -n 1 | egrep ^Processes: |
-awk '{print $4"/"$2;}'` `echo 'echo $$' | bash` `sysctl -n hw.ncpu`
+echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Processes/ {print $4"/"$2;}'` `echo 'echo $$' | bash` `sysctl -n hw.ncpu`
 
 echo '<<<mem>>>'
 pagesize=$(vm_stat | grep Mach | awk '{print $8}')
@@ -206,46 +207,45 @@ echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print
 # the output size by grepping away totally useless parts
 
 # macOS version of lnx_if.
-    echo '<<<lnx_if>>>'
-    # collect only information from active interfaces
-    interfaces=$(networksetup -listnetworkserviceorder | tr -d ')' | awk -F": " '/Hardware Port/ {print $3}' | sort | while read ; do ifconfig ${REPLY} >/dev/null 2>&1 && echo ${REPLY}; done)
-    counter=0
-    echo "[start_iplink]"
-    while read -r eth; do
-        counter=$((counter+1))
-        echo -n "${counter}: "
-        # ip a show "$eth"
-        ifconfig ${eth} | grep -E "mtu|ether|inet"
-    done <<< "$interfaces"
-    echo "[end_iplink]"
+echo '<<<lnx_if>>>'
+# collect only information from active interfaces
+interfaces=$(networksetup -listnetworkserviceorder | tr -d ')' | awk -F": " '/Hardware Port/ {print $3}' | sort | while read ; do ifconfig ${REPLY} >/dev/null 2>&1 && echo ${REPLY}; done)
+counter=0
+echo "[start_iplink]"
+while read -r eth; do
+    counter=$((counter+1))
+    echo -n "${counter}: "
+    # ip a show "$eth"
+    ifconfig ${eth} | grep -E "mtu|ether|inet"
+done <<< "$interfaces"
+echo "[end_iplink]"
 
-    echo '<<<lnx_if:sep(58)>>>'
-    netstat=$(netstat -inbd | grep -E "$interfaces" | grep Link)
-    # Format: Name, IBytes, IPckts, IErr, Drop, 0 (fifo), 0 (frame), 0 (compressed), 0 (multicast), Coll, Obyts, OPckts, OErrs, 0 (drop), 0 (fifo), 0 (coll), 0 (drop)
-    #      (Collisions & drops are not broken out into in/out, so I'm assuming receive for now)
-    echo "$netstat" | awk '{print "\t"$1":\t"$7"\t"$5"\t"$6"\t"$12"\t0\t0\t0\t0\t"$11"\t"$10"\t"$8"\t"$9"\t0\t0\t0\t0"}'
-    # Convert osx ifconfig to lnx_if format:
-    #   Note: Wifi interfaces may have variable speeds each call
-    for eth in $interfaces; do
-        cur_ifconfig=$(ifconfig -v "$eth")
-        # if interface is of type Wi-Fi then report maxRate instead of link rate
-        grep -q 'type: Wi-Fi' <<<"$cur_ifconfig"
-        if [ $? -eq 0 ]; then
-            speed="$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/A/Resources/airport "$eth" -I | awk -F": " '/maxRate/ {print $2}').00Mb/s"
-        else
-            speed=$(grep -E "^\s*(down)?link rate:\s*" <<<"$cur_ifconfig" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
-        fi
-        addr=$(grep -E '^\s*ether' <<<"$cur_ifconfig" | cut -d " " -f2)
-        link_detected=no
-        if grep -E 'status:\s*active' <<<"$cur_ifconfig" > /dev/null || [ "$eth" = "lo0" ]; then
-          link_detected=yes
-        fi
+echo '<<<lnx_if:sep(58)>>>'
+netstat=$(netstat -inbd | grep -E "$interfaces" | grep Link)
+# Format: Name, IBytes, IPckts, IErr, Drop, 0 (fifo), 0 (frame), 0 (compressed), 0 (multicast), Coll, Obyts, OPckts, OErrs, 0 (drop), 0 (fifo), 0 (coll), 0 (drop)
+#      (Collisions & drops are not broken out into in/out, so I'm assuming receive for now)
+echo "$netstat" | awk '{print "\t"$1":\t"$7"\t"$5"\t"$6"\t"$12"\t0\t0\t0\t0\t"$11"\t"$10"\t"$8"\t"$9"\t0\t0\t0\t0"}'
+# Convert osx ifconfig to lnx_if format:
+for eth in $interfaces; do
+    cur_ifconfig=$(ifconfig -v "$eth")
+    # if interface is of type Wi-Fi then report maxRate instead of link rate
+    grep -q 'type: Wi-Fi' <<<"$cur_ifconfig"
+    if [ $? -eq 0 ]; then
+        speed="$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/A/Resources/airport "$eth" -I | awk -F": " '/maxRate/ {print $2}').00Mb/s"
+    else
+        speed=$(grep -E "^\s*(down)?link rate:\s*" <<<"$cur_ifconfig" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
+    fi
+    addr=$(grep -E '^\s*ether' <<<"$cur_ifconfig" | cut -d " " -f2)
+    link_detected=no
+    if grep -E 'status:\s*active' <<<"$cur_ifconfig" > /dev/null || [ "$eth" = "lo0" ]; then
+      link_detected=yes
+    fi
 
-        echo "[$eth]"
-        echo -e "\tSpeed: ${speed:-Unknown}"
-        echo -e "\tLink detected: $link_detected"
-        echo -e "\tAddress: ${addr:-00:00:00:00:00:00}"
-    done
+    echo "[$eth]"
+    echo -e "\tSpeed: ${speed:-Unknown}"
+    echo -e "\tLink detected: $link_detected"
+    echo -e "\tAddress: ${addr:-00:00:00:00:00:00}"
+done
 
 echo '<<<ps>>>'
 ps ax -o user,vsz,rss,pcpu,command | sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4) /'
@@ -285,7 +285,7 @@ fi
 
 # Doesn't work since 10.14 due missing permissions for tmutil
 case $osver in
-    10.?.*|10.10.*|10.11.*|10.12.*|10.13.*)
+    10.?.*|10.1[0-3].*)
         if type tmutil >/dev/null
         then
             echo '<<<timemachine>>>'
