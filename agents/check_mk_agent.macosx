@@ -192,11 +192,40 @@ tr -d ' '` | bc
 # checks plugins with subchecks for parsing that output. Maybe reduce
 # the output size by grepping away totally useless parts
 
-echo '<<<netctr>>>';
-date +'%s'; netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{
-print $1,$7,$5,$6,"0","0","0","0","0",$10,$8,$9,"0","0",$11,"0","0"; }'
-# FIXME: send netstat -inb plain, write proper check plugins for
-# clean parsing of the output
+# macOS version of lnx_if.
+    echo '<<<lnx_if>>>'
+    interfaces=$(networksetup -listallhardwareports | grep -E -A1 "Thunderbolt|Ethernet|Wi-Fi" | awk -F": " '/^Device/ {print $2}' | sort)
+    counter=0
+    echo "[start_iplink]"
+    while read -r eth; do
+        counter=$((counter+1))
+        echo -n "${counter}: "
+        # ip a show "$eth"
+        ifconfig ${eth} | grep -E "mtu|ether|inet"
+    done <<< "$interfaces"
+    echo "[end_iplink]"
+
+    echo '<<<lnx_if:sep(58)>>>'
+    netstat=$(netstat -inbd | grep -E "$interfaces" | grep Link)
+    # Format: Name, IBytes, IPckts, IErr, Drop, 0 (fifo), 0 (frame), 0 (compressed), 0 (multicast), Coll, Obyts, OPckts, OErrs, 0 (drop), 0 (fifo), 0 (coll), 0 (drop)
+    #      (Collisions & drops are not broken out into in/out, so I'm assuming receive for now)
+    echo "$netstat" | awk '{print "\t"$1":\t"$7"\t"$5"\t"$6"\t"$12"\t0\t0\t0\t0\t"$11"\t"$10"\t"$8"\t"$9"\t0\t0\t0\t0"}'
+    # Convert osx ifconfig to lnx_if format:
+    #   Note: Wifi interfaces may have variable speeds each call
+    for eth in $interfaces; do
+        cur_ifconfig=$(ifconfig -v "$eth")
+        speed=$(echo "$cur_ifconfig" | grep -E "^\s*(down)?link rate:\s*" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
+        addr=$(echo "$cur_ifconfig" | grep -E '^\s*ether' | cut -d " " -f2)
+        link_detected=no
+        if echo "$cur_ifconfig" | grep -E 'status:\s*active' > /dev/null || [ "$eth" = "lo0" ]; then
+          link_detected=yes
+        fi
+
+        echo "[$eth]"
+        echo -e "\tSpeed: ${speed:-Unknown}"
+        echo -e "\tLink detected: $link_detected"
+        echo -e "\tAddress: ${addr:-00:00:00:00:00:00}"
+    done
 
 echo '<<<ps>>>'
 ps ax -o user,vsz,rss,pcpu,command | sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4) /'
