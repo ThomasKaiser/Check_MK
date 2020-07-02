@@ -216,15 +216,15 @@ while read -r eth; do
     counter=$((counter+1))
     echo -n "${counter}: "
     # ip a show "$eth"
-    ifconfig ${eth} | grep -E "mtu|ether|inet"
+    ifconfig ${eth} | grep -E "mtu|ether|inet|media"
 done <<< "$interfaces"
 echo "[end_iplink]"
 
 echo '<<<lnx_if:sep(58)>>>'
-netstat=$(netstat -inbd | grep -E "$interfaces" | grep Link)
-# Format: Name, IBytes, IPckts, IErr, Drop, 0 (fifo), 0 (frame), 0 (compressed), 0 (multicast), Coll, Obyts, OPckts, OErrs, 0 (drop), 0 (fifo), 0 (coll), 0 (drop)
-#      (Collisions & drops are not broken out into in/out, so I'm assuming receive for now)
-echo "$netstat" | awk '{print "\t"$1":\t"$7"\t"$5"\t"$6"\t"$12"\t0\t0\t0\t0\t"$11"\t"$10"\t"$8"\t"$9"\t0\t0\t0\t0"}'
+# https://github.com/corriou/checkmk/blob/34fc5e674309595c7d2fa31af1a156840d6d823b/agents/check_mk_agent.macosx#L98
+netstat -inbd | grep -E "$interfaces" | grep Link | sed -e 's/[*]//g' | \
+	awk '{ print $1": "$7,$5,$6,"0","0","0","0","0",$10,$8,$9,"0","0",$11,"0","0"; }'
+
 # Convert osx ifconfig to lnx_if format:
 for eth in $interfaces; do
     cur_ifconfig=$(ifconfig -v "$eth")
@@ -240,9 +240,11 @@ for eth in $interfaces; do
     if grep -E 'status:\s*active' <<<"$cur_ifconfig" > /dev/null || [ "$eth" = "lo0" ]; then
       link_detected=yes
     fi
+    grep -q "media: autoselect" <<<"$cur_ifconfig" && autoselect=on || autoselect=off
 
     echo "[$eth]"
     echo -e "\tSpeed: ${speed:-Unknown}"
+    echo -e "\tAuto-negotiation: $autoselect";
     echo -e "\tLink detected: $link_detected"
     echo -e "\tAddress: ${addr:-00:00:00:00:00:00}"
 done
