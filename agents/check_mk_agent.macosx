@@ -162,7 +162,7 @@ export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 
-echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nAgentOS: macosx $osver"
+echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
 
 echo '<<<df>>>'
 df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
@@ -222,8 +222,8 @@ echo "[end_iplink]"
 
 echo '<<<lnx_if:sep(58)>>>'
 # https://github.com/corriou/checkmk/blob/34fc5e674309595c7d2fa31af1a156840d6d823b/agents/check_mk_agent.macosx#L98
-netstat -inbd | grep -E "$interfaces" | grep Link | sed -e 's/[*]//g' | \
-	awk '{ print $1": "$7,$5,$6,"0","0","0","0","0",$10,$8,$9,"0","0",$11,"0","0"; }'
+netstat -inbd | grep -E "$interfaces" | sed -e 's/[*]//g' | \
+	awk '/Link/ { print $1": "$7,$5,$6,"0","0","0","0","0",$10,$8,$9,"0","0",$11,"0","0"; }'
 
 # Convert osx ifconfig to lnx_if format:
 for eth in $interfaces; do
@@ -265,7 +265,6 @@ fi
 # TCP Conn stats
 echo '<<<tcp_conn_stats>>>'
 netstat -ntfinet | awk ' /^tcp/ { c[$6]++; } END { for (x in c) { print x, c[x]; } }'
-
 
 # Fileinfo-Check: put patterns for files into /etc/check_mk/fileinfo.cfg
 if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then

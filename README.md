@@ -2,12 +2,40 @@
 
 ## macOS support
 
-Currently just a slightly tweaked macosx agent (filters out temporarely appearing filesystems, reports compressed memory as swap, reports some thermal sensors) plus LaunchDaemon. Needs
+A slightly tweaked macosx agent compared to the official one. As of 1.7.0i1 this agent has the following improvements:
+
+  * reports macOS version (e.g. `10.16 (20A4299v)`)
+  * reports correct size of APFS volumes
+  * filters out temporarely appearing filesystems
+  * reports compressed memory as swap
+  * reports network statistics [somewhat correctly](https://github.com/ThomasKaiser/Check_MK/commit/8b080c8bf01277a5710d2022982d1942d49779b8#comments)
+  * runs ntp check only on macOS 10.12 and below since broken with newer macOS releases
+  * runs timemachine check only on macOS 10.13 and below since broken with newer macOS releases
+  * reports thermal sensors if [HardwareMonitor](https://www.bresink.com/osx/HardwareMonitor.html) is available
+  * reports CPU temperature if [osx-cpu-temp](https://github.com/lavoiesl/osx-cpu-temp) is available
+  * reports SMART health data and disk temperatures if `smartmontools` are available
+  * reports outstanding security updates
+  * reports a warning if security updates require a reboot
+  * bundled with a LaunchDaemon that needs to be loaded as below (if you want more fine grained control who can access the agent's output see [here](https://github.com/ThomasKaiser/Check_MK/issues/1) for example):
 
     launchctl load -w /Library/LaunchDaemons/de.mathias-kettner.check_mk.plist
 
-for activation.
-
-For CPU temperature working you need [osx-cpu-temp](https://github.com/lavoiesl/osx-cpu-temp) in `/usr/local/bin` (tested successfully on 2 Mac Mini). For more thermal sensors you need [Marcel Bresink's HardwareMonitor](https://www.bresink.com/osx/HardwareMonitor.html). Then it looks like this with an old MacPro:
+It looks like this with an old MacPro having plenty of hardware sensors and running with available `HardwareMonitor.app` and macOS prior to 10.15:
 
 ![](screenshots/thermal-sensors-macpro.png)
+
+
+## Agent plugins
+
+  * [Active users of Helios EtherShare/PCShare, Samba, Netatalk, macOS server, Filemaker](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/logins)
+  * [Canonical Livepatch](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-canonical-livepatch.sh)
+  * [City temperatures via openweathermap.org](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/city-temperatures)
+  * [Expiring Julia Mailoffice certificates](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-julia-certificates.sh)
+  * [Invalid logins for Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-invalid-kerio-logins.sh)
+  * [Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-kerio)
+  * [Outstanding macOS updates with JAMF Pro](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-jss-and-macos-updates)
+  * [Reboot needed](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-for-reboot.sh)
+  * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-filemaker-server.sh)
+  * [SMART for ODROID HC2 and other JMS578 devices](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/smart-odroid-hc2)
+  * [TimeMachine client based on Netatalk](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/timemachine_agent.linux)
+  * [Znapzend / ZFS snapshot age](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-znapzend-age.sh)
