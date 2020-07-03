@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# Checkmk plugin to report expiring Helios Webshare accounts. For the 
+# sake of simplicity only today and tomorrow are checked (no warnings 
+# upfront, no patience to deal with java date strings and Solaris'
+# rather crippled date utility)
+#
+# Needs to be run on the fileserver and is using piggyback mechanism
+# to report count of expiring accounts at the webshare WO server 
+# (called 'webshare' in the example code below).
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+read HELIOSDIR </etc/HELIOSInstallPath
+Today="$(date "+%d-%b-%Y")"
+Tomorrow="$(TZ=GMT-24 date "+%d-%b-%Y")"
+Soon="$(TZ=GMT-48 date "+%d-%b-%Y")"
+ExpiringToday=$(grep -c "${Today}" "${HELIOSDIR}/var/conf/webshare.passwd")
+ExpiringTomorrow=$(grep -c "${Tomorrow}" "${HELIOSDIR}/var/conf/webshare.passwd")
+ExpiringSoon=$(grep -c "${Soon}" "${HELIOSDIR}/var/conf/webshare.passwd")
+ExpiringAccounts=$(( ${ExpiringToday} + ${ExpiringTomorrow} + ${ExpiringSoon} ))
+
+echo -e '<<<<webshare>>>>\n<<<mrpe>>>'
+if [ ${ExpiringToday} -gt 0 -o ${ExpiringTomorrow} -gt 0 ]; then
+	echo "(${0##*/}) WebShare%20Users 2 ${ExpiringAccounts} accounts expire soon or today | expiring_accounts=${ExpiringAccounts}"
+elif [ ${ExpiringSoon} -gt 0 ]; then
+	echo "(${0##*/}) WebShare%20Users 1 ${ExpiringAccounts} accounts expire in two days | expiring_accounts=${ExpiringAccounts}"
+else
+	echo "(${0##*/}) WebShare%20Users 0 No accounts to expire tomorrow or today | expiring_accounts=0"
+fi
+echo '<<<<>>>>'
