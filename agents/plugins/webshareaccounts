@@ -42,7 +42,11 @@ ExpiringAccounts=$(( ${ExpiringToday} + ${ExpiringTomorrow} + ${ExpiringSoon} ))
 
 echo -e '<<<<webshare>>>>\n<<<mrpe>>>'
 if [ ${ExpiringToday} -gt 0 -o ${ExpiringTomorrow} -gt 0 ]; then
-	echo "(${0##*/}) WebShare%20Users 2 ${ExpiringAccounts} accounts expire tomorrow or today | expiring_accounts=${ExpiringAccounts}"
+	if [ ${ExpiringSoon} -gt 0 ]; then
+		echo "(${0##*/}) WebShare%20Users 2 $(( ${ExpiringToday} + ${ExpiringTomorrow} )) accounts expire tomorrow or today, ${ExpiringSoon} within the next week | expiring_accounts=${ExpiringAccounts}"
+	else
+		echo "(${0##*/}) WebShare%20Users 2 $(( ${ExpiringToday} + ${ExpiringTomorrow} )) accounts expire tomorrow or today | expiring_accounts=${ExpiringAccounts}"
+	fi
 elif [ ${ExpiringSoon} -gt 0 ]; then
 	echo "(${0##*/}) WebShare%20Users 1 ${ExpiringAccounts} accounts expire within the next week | expiring_accounts=${ExpiringAccounts}"
 else
