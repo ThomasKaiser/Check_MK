@@ -50,6 +50,8 @@ if [ -f /var/run/reboot-required ]; then
 				Summary="kernel live patching failed. Reboot required"
 				;;
 		esac
+	else
+		ExitCode=0
 	fi
 	# check whether there are other than kernel packages that require a reboot
 	OutstandingPackages="$(egrep -v "linux-base|linux-image" /var/run/reboot-required.pkgs 2>/dev/null)"
@@ -61,7 +63,7 @@ if [ -f /var/run/reboot-required ]; then
 			Summary="kernel live patching failed and some packages require a reboot (${Packages})"
 		else
 			# No kernel update involved, just regular packages like e.g. dbus require a reboot
-			Packages="$(egrep -v "linux-base|linux-image" | sort | uniq | tr '\n' ',' | sed -e 's/,/, /g' -e 's/,\ $//')"
+			Packages="$(egrep -v "linux-base|linux-image" /var/run/reboot-required.pkgs | sort | uniq | tr '\n' ',' | sed -e 's/,/, /g' -e 's/,\ $//')"
 			OlderThanOneDay=$(find /var/run/reboot-required -mtime +1)
 			if [ "X${OlderThanOneDay}" = "X" ]; then
 				ExitCode=1
