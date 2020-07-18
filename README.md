@@ -28,6 +28,7 @@ It looks like this with an old MacPro having plenty of hardware sensors, running
 ## Agent plugins
 
   * [Active users of Helios EtherShare/PCShare, Samba, Netatalk, macOS server, Filemaker](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/logins)
+  * [Borgbackup](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-borgbackup.sh)
   * [Canonical Livepatch](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-canonical-livepatch.sh)
   * [City temperatures via openweathermap.org](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/city-temperatures)
   * [Expiring Helios WebShare user accounts](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/webshareaccounts)
