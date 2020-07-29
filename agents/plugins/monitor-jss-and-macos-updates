@@ -84,10 +84,15 @@ CheckSoftwareUpdates() {
 		| sed '/^$/d' >"${TmpFile}"
 		echo '<<<mrpe>>>'
 		if [ -s "${TmpFile}" ]; then
-			# if there are updates pending report them with status WARN and use the count
-			# as performance data to generate graphs. Helps identifying lazy users...
+			# if there are updates pending report them with status CRIT if older than 5 days or
+			# status WARN if below and use the count of updates as performance data to generate
+			# graphs. Helps identifying lazy users...
 			CountOfUpdates=$(wc -l <"${TmpFile}" | tr -d '[:space:]')
-			echo "(${0##*/}) Software%20Updates%20${2} 1 WARN - ${CountOfUpdates} updates pending ($(sed 's/-$//' <"${TmpFile}" | tr "\n" "," | sed -e 's/,/, /g' -e 's/,\ $//'), ${ReportStatus})|updates_pending=${CountOfUpdates}"
+			if [ ${TimeDiff} -ge 432000 ]; then
+				echo "(${0##*/}) Software%20Updates%20${2} 2 CRIT - ${CountOfUpdates} updates pending ($(sed 's/-$//' <"${TmpFile}" | tr "\n" "," | sed -e 's/,/, /g' -e 's/,\ $//'), ${ReportStatus})|updates_pending=${CountOfUpdates}"
+			else
+				echo "(${0##*/}) Software%20Updates%20${2} 1 WARN - ${CountOfUpdates} updates pending ($(sed 's/-$//' <"${TmpFile}" | tr "\n" "," | sed -e 's/,/, /g' -e 's/,\ $//'), ${ReportStatus})|updates_pending=${CountOfUpdates}"
+			fi
 		else
 			if [ ${TimeDiff} -ge 777600 ]; then
 				# if last recon is 9 days ago switch to status UNKNOWN
