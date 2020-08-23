@@ -38,7 +38,7 @@
 # check xmlstarlet, if not installed get it with your package manager
 # of choice for example via 'brew install xmlstarlet' on macOS.
 type xmlstarlet >/dev/null 2>&1 || \
-	(echo 'xmlstarlet not available. Aborting.' >&2 ; exit 1)
+	(echo 'UNKN - xmlstarlet not available. Please install using the package manager of your choice' ; exit 3)
 
 credentialPermissions="$(ls -la /etc/jss-credentials | awk -F" " '{print $1}')"
 case ${credentialPermissions} in
@@ -46,14 +46,19 @@ case ${credentialPermissions} in
 		read jssCredentials </etc/jss-credentials
 		;;
 	*)
-		echo '/etc/jss-credentials must only be readable by root. Aborting.' >&2
-		exit 1
+		echo 'UNKN - /etc/jss-credentials must only be readable by root'
+		exit 3
 		;;
 esac
 
 # get JSS URL, works only on a managed client. if you run this on an unmanagend
 # host provide jssURL="https://your.jss.url:8443/" instead
 jssURL="$(defaults read /Library/Preferences/com.jamfsoftware.jamf.plist jss_url)"
+
+if [ -z "${jssCredentials}" -o -z "${jssURL}" ]; then
+	echo 'UNKN - Can not access JSS credentials and/or get JSS API URL'
+	exit 3
+fi
 
 # define IDs of the smart groups containing all macs and those that are only clients
 AllMacsID=1
@@ -115,7 +120,7 @@ HardcodedBruteForce() {
 		ComputerName="$2"
 		case ${ComputerName} in
 			# name pattern to look for
-			mac-eficws|srv-efi|outdoor|noah|share|caramel|autopkg|odr|odm|ais)
+			noah|autopkg|odr|odm|ais)
 				# piggybacked mode
 				echo "<<<<${ComputerName}>>>>"
 				CheckSoftwareUpdates ${ComputerID}
@@ -174,10 +179,22 @@ SearchByGroups() {
 	fi
 } # SearchByGroups
 
-if [ -z "${jssCredentials}" -o -z "${jssURL}" ]; then
-	echo 'Can not access JSS credentials and/or get JSS API URL. Aborting.' >&2
-	exit 1
+# Check timestamp prior to execution
+TimeBefore=$(($(date +%s%N)/1000000))
+
+# Query JSS
+SearchByGroups
+
+# Monitor execution time
+TimeDiff=$(( $(( $(date +%s%N) / 1000000 )) - ${TimeBefore} ))
+DiffInSeconds=$(awk '{printf ("%0.3f",$1/1000); }' <<<${TimeDiff})
+echo '<<<mrpe>>>'
+if [ ${TimeDiff} -gt 60000 ]; then
+	# CRIT above 60 seconds
+	echo "(${0##*/}) JSS%20Performance 2 CRIT - Query took ${DiffInSeconds} seconds|jss_query_time=${TimeDiff}"
+elif [ ${TimeDiff} -gt 20000 ]; then
+	# WARN above 20 seconds
+	echo "(${0##*/}) JSS%20Performance 1 WARN - Query took ${DiffInSeconds} seconds|jss_query_time=${TimeDiff}"
 else
-	# HardcodedBruteForce
-	SearchByGroups
+	echo "(${0##*/}) JSS%20Performance 0 OK - Query took ${DiffInSeconds} seconds|jss_query_time=${TimeDiff}"
 fi
