@@ -15,8 +15,8 @@
 # will be part of the check's status output.
 #
 # In mrpe.cfg define like this for example:
-# Our%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/SWISSSIGN/certs
-# Public%20Certificates (interval=10800) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/public -o
+# Our%20Certificates (interval=86400) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/certs
+# Public%20Certificates (interval=86400) /usr/lib/check_mk_agent/check-julia-certificates.sh -w 14 -c 7 -d /opt/julia/etc/public -o
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -46,14 +46,20 @@ ShowUsage()
 ParseCertificates() {
 	# generate a tab separated list of certificates only containing the
 	# email address and expiration date in seconds since epoch
-	for file in "${CERT_DIR}"/* ; do
-		ExpirationDate="$(openssl x509 -enddate -noout -in ${file} 2>/dev/null | awk -F"=" '/notAfter/ {print $2}')"
-		ExpirationDateInSeconds=$(date "+%s" -d "${ExpirationDate}")
-		eMailAddress="$(openssl x509 -subject -noout -in ${file} 2>/dev/null | awk -F"emailAddress = " '/subject/ {print $2}' | cut -f1 -d',')"
-		if [ "X${eMailAddress}" != "X" ]; then
-			echo -e "${eMailAddress}\t${ExpirationDateInSeconds}" >>"${TmpFile}"
-		fi
-	done
+	if [ -f "${CERT_DIR}/key.db" ]; then
+		# parse Julia's SQLite database containing certificate info
+		/opt/julia/bin/sqlite3 "${CERT_DIR}/key.db" .dump | awk -F"," '{print $12" "$11}' | sed -r '/^\s*$/d' | while read ; do
+			eMailAddress="$(awk -F"'" '{print $2}' <<<"${REPLY}")"
+			ExpirationDate="$(awk -F"'" '{print $4}' <<<"${REPLY}")"
+			ExpirationDateInSeconds=$(date "+%s" -d "${ExpirationDate}")
+			if [ "X${eMailAddress}" != "X" ]; then
+				echo -e "${eMailAddress}\t${ExpirationDateInSeconds}" >>"${TmpFile}"
+			fi
+		done
+	else
+		echo "UNKN - ${CERT_DIR}/key.db not found."
+		exit 3
+	fi
 } # ParseCertificates
 
 CheckCertificates() {
@@ -105,7 +111,7 @@ fi
 
 while getopts 'w:c:d:h:o' OPT; do
 	case ${OPT} in
-		w)	WARN_LIMIT=${OPTARG}
+		w)  WARN_LIMIT=${OPTARG}
 			;;
 		c)  CRIT_LIMIT=${OPTARG}
 			;;
