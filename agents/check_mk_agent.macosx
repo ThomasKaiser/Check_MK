@@ -165,7 +165,8 @@ osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
 
 echo '<<<df>>>'
-df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
+# Check hfs+
+df -kPT hfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
 	sed 1d | while read ; do
 	set ${REPLY}
 	DeviceNode=$1
@@ -179,13 +180,27 @@ df -kPT hfs,apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/
 	Percentage=$1
 	shift
 	MountPoint="$@"
-	if [ $(( ${UsedKB} + ${AvailableKB} )) -eq ${DiskSize} ]; then
-		# it's HFS+
-		echo "${DeviceNode} hfs ${DiskSize} ${UsedKB} ${AvailableKB} ${Percentage} ${MountPoint}"
-	else
-		# it's APFS, we need to divide used kb from disk size since otherwise Check_MK calculates wrongly
-		echo "${DeviceNode} apfs ${DiskSize} ${UsedKB} $(( ${DiskSize} - ${UsedKB} )) ${Percentage} ${MountPoint}"
-	fi
+	echo "${DeviceNode} hfs ${DiskSize} ${UsedKB} ${AvailableKB} ${Percentage} ${MountPoint}"
+done
+# Check apfs. We can neither trust in "KB available" (shared amongst all containers) nor in
+# "KB used" so we have to rely on Capacity instead.
+df -kPT apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
+	sed 1d | while read ; do
+	set ${REPLY}
+	DeviceNode=$1
+	shift
+	DiskSize=$1
+	shift
+	UsedKB=$1
+	shift
+	AvailableKB=$1
+	shift
+	Percentage=$(tr -c -d '[:digit:]' <<<$1)
+	shift
+	MountPoint="$@"
+
+	UsedKBByPercentage=$(bc <<<"${DiskSize} * ${Percentage}0 / 1015")	
+	echo "${DeviceNode} apfs ${DiskSize} ${UsedKB} $(( ${DiskSize} - ${UsedKBByPercentage} )) ${Percentage}% ${MountPoint}"
 done
 
 echo '<<<cpu>>>';
