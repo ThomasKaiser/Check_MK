@@ -350,7 +350,11 @@ elif type osx-cpu-temp >/dev/null 2>&1
 then
     echo '<<<lnx_thermal:sep(124)>>>'
     echo "CPU A PROXIMITY|enabled|thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|70000|passive|90000|critical"
-elif type powermetrics >/dev/null 2>&1
+fi
+
+# Check macOS own powermetrics tool. Please be aware that querying SMC values is not
+# possible on all Mac models (eg. 2018 Mac Mini)
+if type powermetrics >/dev/null 2>&1
 then
 	TmpFile=$(mktemp /tmp/${0##*/}.XXXXXX)
 	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
@@ -358,7 +362,13 @@ then
 	sleep 0.1
 	killall powermetrics
 	CPUTemp=$(awk -F" " '/CPU die temperature/ {print $4}' "${TmpFile}" | tail -n1 | tr -d -c '[:digit:]')
-	[ "X${CPUTemp}" = "X" ] || echo -e "<<<lnx_thermal:sep(124)>>>\nCPU A PROXIMITY|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"	
+	GPUTemp=$(awk -F" " '/GPU die temperature/ {print $4}' "${TmpFile}" | tail -n1 | tr -d -c '[:digit:]')
+	FanRPM=$(awk -F" " '/Fan: / {print $2}' "${TmpFile}" | tail -n1)
+	if [ "X${CPUTemp}" != "X" ]; then
+		echo -e "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
+		echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
+		echo -e "<<<mrpe>>>\n(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
+	fi
 fi
 
 # Check SMART if smartmontools are installed, for NVME Check_MK 1.6 or above is needed
