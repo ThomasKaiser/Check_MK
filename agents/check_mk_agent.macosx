@@ -356,18 +356,24 @@ fi
 # possible on all Mac models (eg. 2018 Mac Mini)
 if type powermetrics >/dev/null 2>&1
 then
-	TmpFile=$(mktemp /tmp/${0##*/}.XXXXXX)
-	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
-	powermetrics -s smc -i 50 >"${TmpFile}" &
-	sleep 0.1
-	killall powermetrics
-	CPUTemp=$(awk -F" " '/CPU die temperature/ {print $4}' "${TmpFile}" | tail -n1 | tr -d -c '[:digit:]')
-	GPUTemp=$(awk -F" " '/GPU die temperature/ {print $4}' "${TmpFile}" | tail -n1 | tr -d -c '[:digit:]')
-	FanRPM=$(awk -F" " '/Fan: / {print $2}' "${TmpFile}" | tail -n1)
+	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc | egrep "die temp|Fan: |Thermal level" | awk -F": " '{print $2}' | awk -F" " '{print $1}')
+	[ "X${PowerMetrics}" = "X" ] || set ${PowerMetrics}
+	CPUThermalLevel=$1
+	GPUThermalLevel=$2
+	IOThermalLevel=$3
+	FanRPM=$4
+	CPUTemp=$(tr -d -c '[:digit:]' <<<$5)
+	GPUTemp=$(tr -d -c '[:digit:]' <<<$6)
 	if [ "X${CPUTemp}" != "X" ]; then
 		echo -e "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
 		echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
 		echo -e "<<<mrpe>>>\n(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
+		if [ ${CPUThermalLevel} -ne 0 -o ${GPUThermalLevel} -ne 0 -o ${IOThermalLevel} -ne 0 ]; then
+			ThermalStatus="1 WARN"
+		else
+			ThermalStatus="0 OK"
+		fi
+		echo -e "<<<mrpe>>>\n(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${CPUThermalLevel}, GPU: ${GPUThermalLevel}, I/O: ${IOThermalLevel} | cpu_thermal_level=${CPUThermalLevel} gpu_thermal_level=${GPUThermalLevel} io_thermal_level=${IOThermalLevel} "
 	fi
 fi
 
