@@ -10,16 +10,24 @@
 #
 # Prerequisits:
 #
+# RPi-Monitor on this host (most easy on Raspbian, Debian or Ubuntu):
+# sudo apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 2C0D3C0F
+# wget -O rpimonitor_2.12-r0_all.deb https://github.com/XavierBerger/RPi-Monitor-deb/blob/master/packages/rpimonitor_2.12-r0_all.deb?raw=true
+# dpkg -i rpimonitor_2.12-r0_all.deb
+#
 # on this host (netcat receiver):
 # nc -l 9999 >/tmp/powermetrics-mbp16-tk.log
 #
-# on the mac (netcat sender):
+# on an Intel mac (netcat sender):
 # powermetrics -s smc,cpu_power,gpu_power 2>/dev/null | egrep --line-buffered "^Intel energy model|^System Average fr|^Package 0 C-st|^CPU/GPU Over|^Cores Active|^GPU Active|^Avg Num of|^CPU Thermal l|^GPU Thermal l|^IO Thermal l|^Fan:|^CPU die t|^GPU die t|^CPU Pl|^GPU Pl|^Number of pr" | nc nagios 9999
 #
-# If you want to monitor more than one machine you need foe each Mac a different port 
-# and a different log file and also an additional line in the while loop below.
+# on an Apple Silicon mac (netcat sender):
+# powermetrics -s cpu_power,gpu_power 2>/dev/null | egrep --line-buffered " Power: | frequency: | active residency: " | nc nagios 9999
 #
-# The output will look like this on an Intel machine:
+# If you want to monitor more than one machine you need for each Mac a different port,
+# a different log file and also an additional line in the while loop below.
+#
+# The unprocessed output will look like this on an Intel machine:
 #
 # Intel energy model derived package power (CPUs+GT+SA): 1.07W
 # System Average frequency as fraction of nominal: 59.63% (1550.27 Mhz)
@@ -37,6 +45,39 @@
 # CPU Plimit: 0.00
 # GPU Plimit (Int): 0.00 
 # Number of prochots: 0
+#
+# Unprocessed output will look like this on an ARM machine:
+#
+# ANE Power: 0 mW
+# DRAM Power: 9 mW
+# GPU Power: 0 mW
+# E-Cluster Power: 16 mW
+# P-Cluster Power: 1 mW
+# Package Power: 25 mW
+# Clusters Total Power: 16 mW
+# cpu 0 active residency:   4.83% (600 MHz: .01% 972 MHz: 3.7% 1332 MHz: .65% 1704 MHz: .32% 2064 MHz: .15%)
+# cpu 0 frequency: 1103 MHz
+# cpu 1 active residency:   5.12% (600 MHz: .00% 972 MHz: 3.8% 1332 MHz: .75% 1704 MHz: .32% 2064 MHz: .22%)
+# cpu 1 frequency: 1116 MHz
+# cpu 2 active residency:   4.27% (600 MHz: .20% 972 MHz: 2.9% 1332 MHz: .52% 1704 MHz: .31% 2064 MHz: .39%)
+# cpu 2 frequency: 1150 MHz
+# cpu 3 active residency:   4.05% (600 MHz: .01% 972 MHz: 3.3% 1332 MHz: .36% 1704 MHz: .15% 2064 MHz: .25%)
+# cpu 3 frequency: 1099 MHz
+# cpu 4 active residency:   0.07% (600 MHz: .04% 828 MHz: .00% 1056 MHz: .00% 1284 MHz:   0% 1500 MHz:   0% 1728 MHz:   0% 1956 MHz: .02% 2184 MHz:   0% 2388 MHz:   0% 2592 MHz:   0% 2772 MHz:   0% 2988 MHz:   0% 3096 MHz:   0% 3144 MHz:   0% 3204 MHz:   0%)
+# cpu 4 frequency: 1049 MHz
+# cpu 5 active residency:   0.01% (600 MHz: .00% 828 MHz: .00% 1056 MHz: .00% 1284 MHz:   0% 1500 MHz:   0% 1728 MHz:   0% 1956 MHz: .00% 2184 MHz:   0% 2388 MHz:   0% 2592 MHz:   0% 2772 MHz:   0% 2988 MHz:   0% 3096 MHz:   0% 3144 MHz:   0% 3204 MHz:   0%)
+# cpu 5 frequency: 1259 MHz
+# cpu 6 active residency:   0.00% (600 MHz: .00% 828 MHz:   0% 1056 MHz: .00% 1284 MHz:   0% 1500 MHz:   0% 1728 MHz:   0% 1956 MHz: .00% 2184 MHz:   0% 2388 MHz:   0% 2592 MHz:   0% 2772 MHz:   0% 2988 MHz:   0% 3096 MHz:   0% 3144 MHz:   0% 3204 MHz:   0%)
+# cpu 6 frequency: 924 MHz
+# cpu 7 active residency:   0.00% (600 MHz: .00% 828 MHz:   0% 1056 MHz:   0% 1284 MHz:   0% 1500 MHz:   0% 1728 MHz:   0% 1956 MHz:   0% 2184 MHz:   0% 2388 MHz:   0% 2592 MHz:   0% 2772 MHz:   0% 2988 MHz:   0% 3096 MHz:   0% 3144 MHz:   0% 3204 MHz:   0%)
+# cpu 7 frequency: 600 MHz
+# E-Cluster HW active frequency: 992 MHz
+# E-Cluster HW active residency:  12.16% (600 MHz: .20% 972 MHz:  97% 1332 MHz: 1.4% 1704 MHz: .92% 2064 MHz: .87%)
+# P-Cluster HW active frequency: 609 MHz
+# P-Cluster HW active residency:   0.07% (600 MHz:  99% 828 MHz: .06% 1056 MHz: .05% 1284 MHz:   0% 1500 MHz:   0% 1728 MHz:   0% 1956 MHz: .67% 2184 MHz:   0% 2388 MHz:   0% 2592 MHz:   0% 2772 MHz:   0% 2988 MHz:   0% 3096 MHz:   0% 3144 MHz:   0% 3204 MHz:   0%)
+# GPU active frequency: 396 MHz
+# GPU active residency:   0.33% (396 MHz: .33% 528 MHz:   0% 720 MHz:   0% 924 MHz:   0% 1128 MHz:   0% 1278 MHz:   0%)
+# GPU requested frequency: (396 MHz: .33% 528 MHz:   0% 720 MHz:   0% 924 MHz:   0% 1128 MHz:   0% 1278 MHz:   0%)
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -48,29 +89,56 @@ CheckMachine() {
 	MachineDir=/tmp/rpimonitor/${Machine}
 	[ -d ${MachineDir} ] || mkdir -p -m2777 ${MachineDir}
 	Logfile=/tmp/powermetrics-${Machine}.log
-	tail -n 31 ${Logfile} >${TmpFile}
+	tail -n 31 ${Logfile} | sort -u >${TmpFile}
 	
-	grep "^Intel energy model" ${TmpFile} | tail -n1 | cut -f2 -d':' | tr -d -c '[:digit:]' >${MachineDir}/power
-	grep "^System Average fr" ${TmpFile} | tail -n1 | awk -F" " '{print $9}' | sed 's/(//' >${MachineDir}/avg_frequency
-	grep "^Package 0 C-st" ${TmpFile} | tail -n1 | awk -F" " '{print $5}' | sed 's/%//' >${MachineDir}/c_state_residency
-	grep "^CPU/GPU Over" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cpu_gpu_overlap
-	grep "^Cores Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cores_active
-	grep "^GPU Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/gpu_active
-	grep "^Avg Num of" ${TmpFile} | tail -n1 | awk -F" " '{print $6}' >${MachineDir}/avg_num_cores_active
-	grep "^CPU Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/cpu_thermal_level
-	grep "^GPU Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_thermal_level
-	grep "^IO Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/io_thermal_level
-	grep "^Fan:" ${TmpFile} | tail -n1 | awk -F" " '{print $2}' >${MachineDir}/fan_rpm
-	grep "^CPU die t" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/cpu_die_temp
-	grep "^GPU die t" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_die_temp
-	grep "^CPU Pl" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' >${MachineDir}/cpu_plimit
-	grep "^GPU Pl" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_plimit
-	grep "^Number of pr" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/prochots
+	grep -q "^Intel energy model" ${TmpFile}
+	case $? in
+		0)
+			# Intel
+			grep "^Intel energy model" ${TmpFile} | tail -n1 | cut -f2 -d':' | tr -d -c '[:digit:]' >${MachineDir}/power
+			grep "^System Average fr" ${TmpFile} | tail -n1 | awk -F" " '{print $9}' | sed 's/(//' >${MachineDir}/avg_frequency
+			grep "^Package 0 C-st" ${TmpFile} | tail -n1 | awk -F" " '{print $5}' | sed 's/%//' >${MachineDir}/c_state_residency
+			grep "^CPU/GPU Over" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cpu_gpu_overlap
+			grep "^Cores Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cores_active
+			grep "^GPU Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/gpu_active
+			grep "^Avg Num of" ${TmpFile} | tail -n1 | awk -F" " '{print $6}' >${MachineDir}/avg_num_cores_active
+			grep "^CPU Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/cpu_thermal_level
+			grep "^GPU Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_thermal_level
+			grep "^IO Thermal l" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/io_thermal_level
+			grep "^Fan:" ${TmpFile} | tail -n1 | awk -F" " '{print $2}' >${MachineDir}/fan_rpm
+			grep "^CPU die t" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/cpu_die_temp
+			grep "^GPU die t" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_die_temp
+			grep "^CPU Pl" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' >${MachineDir}/cpu_plimit
+			grep "^GPU Pl" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/gpu_plimit
+			grep "^Number of pr" ${TmpFile} | tail -n1 | awk -F" " '{print $4}' >${MachineDir}/prochots
+			;;
+		*)
+			# Apple Silicon
+			awk -F' ' '/ANE Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/ane_power
+			awk -F' ' '/DRAM Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/dram_power
+			awk -F' ' '/GPU Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/gpu_power
+			awk -F' ' '/E-Cluster Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/e_cluster_power
+			awk -F' ' '/P-Cluster Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/p_cluster_power
+			awk -F' ' '/Package Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/power
+			awk -F' ' '/Clusters Total Power:/ {print $4}' ${TmpFile} | tail -n1 >${MachineDir}/cpu_power
+
+			awk -F' ' '/E-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/e_cluster_active_residency
+			awk -F' ' '/E-Cluster HW active frequency/ {print $5}' ${TmpFile} >${MachineDir}/e_cluster_frequency
+			awk -F' ' '/P-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/p_cluster_active_residency
+			awk -F' ' '/P-Cluster HW active frequency/ {print $5}' ${TmpFile} >${MachineDir}/p_cluster_frequency
+			awk -F' ' '/GPU active residency/ {print $4}' ${TmpFile} | sed 's/%//' >${MachineDir}/gpu_active_residency
+			awk -F' ' '/GPU active frequency/ {print $4}' ${TmpFile} >${MachineDir}/gpu_frequency
+			for i in {0..7} ; do
+				awk -F' ' "/cpu ${i} frequency/ {print \$4}" ${TmpFile} >${MachineDir}/cpu${i}_frequency
+				awk -F' ' "/cpu ${i} active residency/ {print \$5}" ${TmpFile} | sed 's/%//' >${MachineDir}/cpu${i}_active_residency
+			done
+			;;
+	esac
 } # CheckMachine
 
 while true ; do
 	CheckMachine mbp16-tk
-	# CheckMachine mbair
+	CheckMachine mbair-tk
 	# CheckMachine mbp13-yb
-	sleep 2
+	sleep 1
 done
