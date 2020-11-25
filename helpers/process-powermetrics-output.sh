@@ -115,8 +115,8 @@ CheckMachine() {
 		0)
 			# Intel
 			grep "^Intel energy model" ${TmpFile} | tail -n1 | cut -f2 -d':' | tr -d -c '[:digit:]' >${MachineDir}/power
-			grep "^System Average fr" ${TmpFile} | tail -n1 | awk -F" " '{print $9}' | sed 's/(//' | cut -d'.' -f1 >${MachineDir}/avg_frequency
-			grep "^Package 0 C-st" ${TmpFile} | tail -n1 | awk -F" " '{print $5}' | sed 's/%//' >${MachineDir}/c_state_residency
+			grep "^System Average fr" ${TmpFile} | tail -n1 | awk -F" " '{print $9}' | sed 's/(//' | cut -d'.' -f1 >${MachineDir}/avg_freq
+			grep "^Package 0 C-st" ${TmpFile} | tail -n1 | awk -F" " '{print $5}' | sed 's/%//' >${MachineDir}/c_state_resid
 			grep "^CPU/GPU Over" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cpu_gpu_overlap
 			grep "^Cores Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/cores_active
 			grep "^GPU Active" ${TmpFile} | tail -n1 | awk -F" " '{print $3}' | sed 's/%//' >${MachineDir}/gpu_active
@@ -141,15 +141,15 @@ CheckMachine() {
 			awk -F' ' '/Package Power:/ {print $3}' ${TmpFile} | tail -n1 >${MachineDir}/power
 			awk -F' ' '/Clusters Total Power:/ {print $4}' ${TmpFile} | tail -n1 >${MachineDir}/cpu_power
 
-			awk -F' ' '/E-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/e_residency
+			awk -F' ' '/E-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/e_resid
 			awk -F' ' '/E-Cluster HW active frequency/ {print $5}' ${TmpFile} >${MachineDir}/e_freq
-			awk -F' ' '/P-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/p_residency
+			awk -F' ' '/P-Cluster HW active residency/ {print $5}' ${TmpFile} | sed 's/%//' >${MachineDir}/p_resid
 			awk -F' ' '/P-Cluster HW active frequency/ {print $5}' ${TmpFile} >${MachineDir}/p_freq
-			awk -F' ' '/GPU active residency/ {print $4}' ${TmpFile} | sed 's/%//' >${MachineDir}/gpu_residency
-			awk -F' ' '/GPU active frequency/ {print $4}' ${TmpFile} >${MachineDir}/gpu_frequency
+			awk -F' ' '/GPU active residency/ {print $4}' ${TmpFile} | sed 's/%//' >${MachineDir}/gpu_resid
+			awk -F' ' '/GPU active frequency/ {print $4}' ${TmpFile} >${MachineDir}/gpu_freq
 			for i in {0..7} ; do
-				awk -F' ' "/cpu ${i} frequency/ {print \$4}" ${TmpFile} >${MachineDir}/cpu${i}_frequency
-				awk -F' ' "/cpu ${i} active residency/ {print \$5}" ${TmpFile} | sed 's/%//' >${MachineDir}/cpu${i}_residency
+				awk -F' ' "/cpu ${i} frequency/ {print \$4}" ${TmpFile} >${MachineDir}/cpu${i}_freq
+				awk -F' ' "/cpu ${i} active residency/ {print \$5}" ${TmpFile} | sed 's/%//' >${MachineDir}/cpu${i}_resid
 			done
 			;;
 	esac
