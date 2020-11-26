@@ -165,11 +165,16 @@ CheckThermals() {
 	Machine=$1
 	MachineDir=/tmp/rpimonitor/${Machine}
 	IPAddress=$2
+	fping -t 100 ${IPAddress} >/dev/null 2>&1 || return
 	curl -s "http://${IPAddress}:4027/api/sensors" 2>/dev/null | awk -F'"' '/:/ {print $2"="$4}' \
 		| sed -e 's/Temp//' -e 's/\ /_/g' -e 's/__/_/' -e 's/Sensor//' -e 's/battery/bat/' \
 		| tr '[:upper:]' '[:lower:]' | while read ; do
 			echo ${REPLY##*=} >${MachineDir}/${REPLY%=*}
 	done
+	# average SoC temperatures
+	echo "$(cat ${MachineDir}/*soc* | awk -F',' '{sum+=$1;} END{print sum;}') / 6" | bc -l | cut -c-5 >${MachineDir}/soc_avg
+	
+	# check fans if available
 	curl -s "http://${IPAddress}:4027/api/fans" 2>/dev/null | awk -F'"' '/:/ {print $2"="$4}' \
 		| sed -e 's/\ /_/g' | tr '[:upper:]' '[:lower:]' | while read ; do
 			echo ${REPLY##*=} >${MachineDir}/${REPLY%=*}
