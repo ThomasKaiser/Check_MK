@@ -153,10 +153,93 @@
 #   "Fan 1" : "1211"
 # }
 #
-# The script will then run in an indefinite loop parsing the logfiles transmitted via
+# The script will then run in an infinite loop parsing the logfiles transmitted via
 # netcat as well as pulling sensor data via HTTP from iStatistica and will create
 # for each sensor available a single file below /tmp/rpimonitor/$mac/ containing the
-# sensor value so these files can then be used in RPi-Monitor templates to be graphed.
+# sensor value so these files can then be used in RPi-Monitor templates to be graphed:
+#
+# root@nagios:/tmp/rpimonitor/mbp13-yb# for file in * ; do echo -e "${file}\t$(<${file})"; done
+# ane_mtr_1	30
+# ane_power	0
+# cpu0_freq	1043
+# cpu0_resid	16.02
+# cpu1_freq	1029
+# cpu1_resid	23.43
+# cpu2_freq	1037
+# cpu2_resid	13.90
+# cpu3_freq	1011
+# cpu3_resid	10.27
+# cpu4_freq	966
+# cpu4_resid	0.33
+# cpu5_freq	788
+# cpu5_resid	0.06
+# cpu6_freq	641
+# cpu6_resid	0.03
+# cpu7_freq	623
+# cpu7_resid	0.03
+# cpu_power	50
+# dram_power	56
+# eacc_mtr_0	25
+# eacc_mtr_3	20
+# e_freq	1018
+# e_power	46
+# e_resid	45.49
+# fan_1	1211
+# gas_gauge_bat	24
+# gpu_freq	708
+# gpu_mtr_1	30
+# gpu_mtr_4	30
+# gpu_power	121
+# gpu_resid	19.13
+# isp_mtr_5	30
+# nand_ch0_temp	24
+# pacc_mtr_2	23
+# pacc_mtr_3	25
+# pacc_mtr_4	24
+# pacc_mtr_5	24
+# pacc_mtr_7	23
+# pacc_mtr_8	24
+# pacc_mtr_9	24
+# p_freq	607
+# pmgr_soc_die_0	24
+# pmgr_soc_die_1	24
+# pmgr_soc_die_2	24
+# pmu2_tr0z	51
+# pmu2_tr1d	26
+# pmu2_tr1l	31
+# pmu2_tr2d	26
+# pmu2_tr2l	32
+# pmu2_tr3b	30
+# pmu2_tr3d	26
+# pmu2_tr4b	31
+# pmu2_tr4d	25
+# pmu2_tr5b	31
+# pmu2_tr5d	24
+# pmu2_tr6b	31
+# pmu2_tr7b	31
+# pmu2_tr8b	31
+# pmu_tcal	51
+# pmu_tdev1	26
+# pmu_tdev2	26
+# pmu_tdev3	26
+# pmu_tdev6	26
+# pmu_tdev7	26
+# pmu_tdev8	27
+# pmu_tdie1	32
+# pmu_tdie2	28
+# pmu_tdie4	30
+# pmu_tdie5	30
+# pmu_tdie6	30
+# pmu_tdie7	30
+# pmu_tdie8	29
+# pmu_tp3w	31
+# power	172
+# p_power	4
+# p_resid	0.35
+# soc_avg	23.33
+# soc_mtr_0	23
+# soc_mtr_1	24
+# soc_mtr_2	21
 #
 # To ease creation of RPi monitor templates the following script can be used to create
 # the data input section:
@@ -177,7 +260,7 @@
 # 	done
 # done
 #
-# The end results of this script (graphs drawn by RPi-Monitor) look like this:
+# The end results of this script (graphs drawn by RPi-Monitor) look like this for example:
 # https://github.com/ThomasKaiser/Knowledge/blob/master/articles/Exploring_Apple_Silicon_on_MacBookAir10.md
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
