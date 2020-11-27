@@ -313,7 +313,7 @@ fi
 # Doesn't work since 10.14 due missing permissions for tmutil
 case $osver in
     10.?.*|10.1[0-3].*)
-        if type tmutil >/dev/null
+        if type tmutil >/dev/null 2>&1
         then
             echo '<<<timemachine>>>'
             tmutil latestbackup 2>&1
@@ -321,8 +321,9 @@ case $osver in
         ;;
 esac
 
-# temperatures and sensors, requires HardwareMonitor.app or osx-cpu-temp or built-in
-# powermetrics.
+# temperatures and sensors, requires HardwareMonitor.app or osx-cpu-temp. On newer
+# machines HardwareMonitor.app has no access to relevant sensors any more and if macOS'
+# own powermetrics binary is available and works then it should be preferred.
 if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
     echo '<<<lnx_thermal:sep(124)>>>'
     /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor -c | grep " C$" | while read ; do
@@ -353,7 +354,7 @@ then
 fi
 
 # Check macOS own powermetrics tool. Please be aware that querying SMC values is not
-# possible on all Mac models (eg. 2018 Mac Mini)
+# possible on all Mac models (eg. fails on 2018 Mac Mini)
 if type powermetrics >/dev/null 2>&1
 then
 	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc | egrep "die temp|Fan: |Thermal level" | awk -F": " '{print $2}' | awk -F" " '{print $1}')
@@ -368,7 +369,9 @@ then
 		echo -e "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
 		echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
 		echo -e "<<<mrpe>>>\n(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
-		if [ ${CPUThermalLevel} -ne 0 -o ${GPUThermalLevel} -ne 0 -o ${IOThermalLevel} -ne 0 ]; then
+		if [ ${CPUThermalLevel} -ge 75 -o ${GPUThermalLevel} -ge 75 -o ${IOThermalLevel} -ge 75 ]; then
+			ThermalStatus="2 CRIT"
+		elif [ ${CPUThermalLevel} -ge 25 -o ${GPUThermalLevel} -ge 25 -o ${IOThermalLevel} -ge 25 ]; then
 			ThermalStatus="1 WARN"
 		else
 			ThermalStatus="0 OK"
@@ -378,7 +381,7 @@ then
 fi
 
 # Check SMART if smartmontools are installed, for NVME Check_MK 1.6 or above is needed
-if type smartctl >/dev/null
+if type smartctl >/dev/null 2>&1
 then
     echo '<<<smart>>>'
     diskutil list | grep -v 'virtual)' | awk -F" " '/(internal)/ {print $1}' | while read ; do
@@ -396,6 +399,48 @@ then
             fi
         fi
     done
+fi
+
+# Check whether iStatistica with Sensors daemon is installed to try to query the API for
+# thermal sensor data and fan speeds if available: https://www.imagetasks.com/istatistica/
+# You need to enable web access in iStatistica and adjust the port in case you won't stay
+# with the defaults (port 4027)
+#
+# To get all thermal sensors (47 on Apple Silicon Macs released in Nov 2020) set the below
+# to TRUE
+
+AllSensors=FALSE
+iStatisticaPort=4027
+
+iStatisticaSensorsRunning=$(pgrep "iStatistica Sensors")
+if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
+	echo '<<<lnx_thermal:sep(124)>>>'
+
+	# calculate a SoC temperature averaging thermal values with "SOC" in their name
+	SoCTemps=$(curl --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/sensors" 2>/dev/null | awk -F'"' '/SOC/ {print $4}')
+	CountOfSoCSensors=$(wc -l <<<"${SoCTemps}")
+	SoCAvgTemp=$(echo "$(awk -F',' '{sum+=$1;} END{print sum;}' <<<"${SoCTemps}") / ${CountOfSoCSensors} * 1000" | bc -l | cut -f1 -d'.')
+	[ ${SoCAvgTemp} -eq 0 ] || echo "SoC|enabled|thermal|${SoCAvgTemp}|60000|passive|90000|critical"
+
+	# if $AllSensors=TRUE expose each and every sensor to Check_MK
+	if [ "X${AllSensors}" = "XTRUE" ]; then
+		curl  --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/sensors" 2>/dev/null | \
+			awk -F'"' '/:/ {print $2"="$4}' | sed -e 's/\ /_/g' | while read ; do
+				echo "${REPLY%=*}|enabled|thermal|${REPLY##*=}000|60000|passive|90000|critical"
+		done
+	fi
+
+	# check whether fan data is available
+	curl  --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/fans" 2>/dev/null | \
+		awk -F'"' '/:/ {print $2"="$4}' | sed -e 's/\ /%20/g' | while read ; do
+			GraphName=$(sed -e 's/%20/_/g' <<< "${REPLY%=*}" | tr '[:upper:]' '[:lower:]')
+			if [ ${REPLY##*=} -ge 4000 ]; then
+				FanStatus="1 WARN"
+			else
+				FanStatus="0 OK"
+			fi
+			echo -e "<<<mrpe>>>\n(${0##*/}) ${REPLY%=*}%20rpm ${FanStatus} - ${REPLY##*=} fan rotations per minute | ${GraphName}=${REPLY##*=}"
+	done
 fi
 
 # query security updates in Apt compatible way, check every 24 hours
