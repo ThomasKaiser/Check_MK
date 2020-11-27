@@ -11,7 +11,7 @@ A slightly tweaked macosx agent compared to the official one. As of 1.7.0i1 this
   * reports network statistics [somewhat correctly](https://github.com/ThomasKaiser/Check_MK/commit/8b080c8bf01277a5710d2022982d1942d49779b8#comments)
   * runs ntp check only on macOS 10.12 and below since broken with newer macOS releases
   * runs timemachine check only on macOS 10.13 and below since broken with newer macOS releases
-  * On recent Intel Macs reports thermals and fan speeds by using macOS' `powermetrics` tool
+  * on recent Intel Macs reports thermals and fan speeds by using macOS' `powermetrics` tool
   * on older Intel Macs reports thermal sensors if [HardwareMonitor](https://www.bresink.com/osx/HardwareMonitor.html) is available or [iStatistica](https://www.imagetasks.com/istatistica/)
   * on Apple Silicon Macs reports thermal sensors and fan speeds if [iStatistica](https://www.imagetasks.com/istatistica/) is available
   * reports SMART health data and disk temperatures if `smartctl` is available (`brew install smartmontools`)
@@ -25,6 +25,9 @@ It looks like this with an old MacPro having plenty of hardware sensors, running
 
 ![](screenshots/thermal-sensors-macpro.png)
 
+It looks like this with a new M1 MacBook Air having plenty of hardware sensors, running with `iStatistica.app` and macOS 11:
+
+![](screenshots/thermal-sensors-macbook-air-m1.png)
 
 ## Agent plugins
 
