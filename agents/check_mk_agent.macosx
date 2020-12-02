@@ -443,6 +443,23 @@ if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
 	done
 fi
 
+# battery and maybe also UPS support
+pmset -g batt | grep "Battery" | while read ; do
+	SensorName=$(awk -F" " '{print $1}' <<<${REPLY} | tr -d -c '[:alnum:]')
+	GraphName=$(tr '[:upper:]' '[:lower:]' <<<${SensorName})
+	Percentage=$(awk -F";" '{print $1}' <<<${REPLY} | awk -F" " '{print $3}' | tr -d -c '[:alnum:]')
+	BattStatus=$(awk -F";" '{print $2}' <<<${REPLY})
+	Remaining=$(awk -F";" '{print $3}' <<<${REPLY})
+	if [ ${Percentage} -le 10 ]; then
+		CheckStatus="2 CRIT"
+	elif [ ${Percentage} -le 25 ]; then
+		CheckStatus="1 WARN"
+	else
+		CheckStatus="0 OK"
+	fi
+	echo -e "<<<mrpe>>>\n(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${Remaining} | ${GraphName}_percentage=${Percentage}"
+done
+
 # query security updates in Apt compatible way, check every 24 hours
 RestartNeeded=0
 echo '<<<apt:sep(0)>>>'
