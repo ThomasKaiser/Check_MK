@@ -369,9 +369,9 @@ then
 		echo -e "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
 		echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
 		echo -e "<<<mrpe>>>\n(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
-		if [ ${CPUThermalLevel} -ge 75 -o ${GPUThermalLevel} -ge 75 -o ${IOThermalLevel} -ge 75 ]; then
+		if [ ${CPUThermalLevel} -ge 80 -o ${GPUThermalLevel} -ge 80 -o ${IOThermalLevel} -ge 80 ]; then
 			ThermalStatus="2 CRIT"
-		elif [ ${CPUThermalLevel} -ge 25 -o ${GPUThermalLevel} -ge 25 -o ${IOThermalLevel} -ge 25 ]; then
+		elif [ ${CPUThermalLevel} -ge 60 -o ${GPUThermalLevel} -ge 60 -o ${IOThermalLevel} -ge 60 ]; then
 			ThermalStatus="1 WARN"
 		else
 			ThermalStatus="0 OK"
