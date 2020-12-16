@@ -459,8 +459,12 @@ CheckBatteryHealth() {
 				echo -e " cycle_count=${REPLY##*=}\c"
 				;;
 			Condition)
-				if [ "X${REPLY##*=}" != "XNormal" ]; then
+				if [ "X${REPLY##*=}" = "XNormal" ]; then
+					echo -e " condition=0\c"
+				elif [ "X${REPLY##*=}" = "XService Recommended" ]; then
 					echo -e " condition=1\c"
+				else
+					echo -e " condition=2\c"
 				fi
 				;;
 		esac
@@ -468,6 +472,10 @@ CheckBatteryHealth() {
 } # CheckBatteryHealth
 BatteryHealthGraph=$(CheckBatteryHealth)
 case ${BatteryHealthGraph} in
+	*condition=2)
+		OKState="2 CRIT"
+		BatteryHealth=", battery condition: $(system_profiler SPPowerDataType | awk -F": " '/Condition/ {print $2}')"
+		;;
 	*condition=1)
 		OKState="1 WARN"
 		BatteryHealth=", battery condition: $(system_profiler SPPowerDataType | awk -F": " '/Condition/ {print $2}')"
