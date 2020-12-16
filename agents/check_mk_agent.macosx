@@ -389,7 +389,15 @@ then
         if [ -n "${DNAME}" ]; then
             # SATA
             MODEL="$(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
-            smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|$DNAME ATA $MODEL |"
+            case ${REPLY} in
+            	/dev/disk0)
+            		# report internal SSD as /dev/disk0 to be consistent with NVMe reporting
+            		smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|/dev/disk0 ATA $MODEL |"
+            		;;
+            	*)
+		            smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|$DNAME ATA $MODEL |"
+		            ;;
+		    esac
         else
             DNAME="$(smartctl -d nvme -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
             if [ -n "${DNAME}" ]; then
