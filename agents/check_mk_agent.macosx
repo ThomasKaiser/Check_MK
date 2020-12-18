@@ -161,7 +161,7 @@ function run_cached () {
 export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
-Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}' | sort -r)
+Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
 
 echo -e "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
 
@@ -218,6 +218,8 @@ done
 echo '<<<cpu>>>';
 echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Processes/ {print $4"/"$2;}'` `echo 'echo $$' | bash` `sysctl -n hw.ncpu`
 
+# compressed memory will be incorrectly reported as swap since this is macOS'
+# first and usual choice if memory pressure increases
 echo '<<<mem>>>'
 pagesize=$(vm_stat | grep Mach | awk '{print $8}')
 compressedpages=$(vm_stat | grep "stored in compressor:" | awk '{print $5}')
@@ -227,6 +229,32 @@ echo "SwapTotal: $(echo "$compressedpages * $pagesize / 1024" | bc) kB"
 echo "SwapFree: $(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize / 1024" | bc) kB"
 # FIXME: Just call vm_stat here, write a check plugin that uses that
 # native output of vm_stat
+
+# Report whole vm_stat output as 'Swap and Paging' sensor to really get all
+# the details and to decide how much memory is enough, see for example
+# https://github.com/ThomasKaiser/Knowledge/blob/master/articles/Exploring_Apple_Silicon_on_MacBookAir10.md#testing-different-hardware-configurations-on-the-same-machine
+ParseVM_Stat_Output() {
+	vm_stat | grep -v Mach | sed -e 's/\.$//' -e 's/"//g' | while read ; do
+		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
+		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
+		echo -e " ${Attribute}=${Value}\c"
+	done
+} # ParseVM_Stat_Output
+# report values in MB instead of pages (pagesize might change between OS releases)
+ScaleFactor=$(( 1048576 / ${pagesize} ))
+VMStatGraph=$(ParseVM_Stat_Output)
+CountOfSwapFiles=$(ls /var/vm/swapfile* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
+CountOfCores=$(ls /var/vm/*core* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
+VMStatus="${CountOfSwapFiles} swapfile(s)"
+if [ ${CountOfSwapFiles} -gt 0 ]; then
+	CheckStatus="2 CRIT"
+elif [ ${CountOfCores} -gt 0 ]; then
+	CheckStatus="1 WARN"
+	VMStatus="${VMStatus}, ${CountOfCores} corefile(s)"
+else
+	CheckStatus="0 OK"
+fi
+echo -e "<<<mrpe>>>\n(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles}${VMStatGraph}"
 
 echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
@@ -311,7 +339,7 @@ if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
     IFS=$OLD_IFS
 fi
 
-# Doesn't work since 10.14 due missing permissions for tmutil
+# Doesn't work since 10.14 due to missing permissions for tmutil
 case $osver in
     10.?.*|10.1[0-3].*)
         if type tmutil >/dev/null 2>&1
@@ -473,6 +501,8 @@ CheckBatteryHealth() {
 				elif [ "X${REPLY##*=}" = "XService Recommended" ]; then
 					echo -e " condition=1\c"
 				else
+					# fallback for either "Service Battery" or whatever other condition
+					# Apple already defined or will define in the future.
 					echo -e " condition=2\c"
 				fi
 				;;
@@ -491,7 +521,7 @@ case ${BatteryHealthGraph} in
 		;;
 	*condition=1*)
 		OKState="1 WARN"
-		BatteryHealth=", battery condition: $(system_profiler SPPowerDataType | awk -F": " '/Condition/ {print $2}')"
+		BatteryHealth=", battery condition: Service Recommended"
 		;;
 	*)
 		OKState="0 OK"
