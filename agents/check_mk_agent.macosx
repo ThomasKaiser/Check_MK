@@ -161,8 +161,9 @@ function run_cached () {
 export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
+Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}' | sort -r)
 
-echo -e "<<<check_mk>>>\nVersion: 1.6.0p13\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
+echo -e "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
 
 echo '<<<df>>>'
 # Check hfs+
@@ -455,7 +456,7 @@ fi
 ChargerWattage=$(pmset -g ac | awk -F" " '/Wattage/ {print $3}' | tr -d -c '[:digit:]')
 [ "X${ChargerWattage}" = "X" ] || ChargerInfo=", ${ChargerWattage}W charger connected"
 CheckBatteryHealth() {
-	system_profiler SPPowerDataType | egrep "Cycle Count|Condition|Maximum Capacity|Charge Remaining" | sed -e 's/:\ /=/' -e 's/          //' | while read ; do
+	system_profiler SPPowerDataType | egrep "Cycle Count|Condition|Maximum Capacity|Charge Remaining|^      Serial Number" | sed -e 's/:\ /=/' -e 's/          //' | while read ; do
 		case ${REPLY%=*} in
 			Charge*)
 				echo -e " charge_remaining=${REPLY##*=}\c"
@@ -475,16 +476,20 @@ CheckBatteryHealth() {
 					echo -e " condition=2\c"
 				fi
 				;;
+			*Serial*)
+				ObfuscatedChagerSerial=$(tr -d -c '[:digit:]' <<<"${REPLY##*=}")
+				echo -e " charger_serial=${ObfuscatedChagerSerial}\c"
+				;;
 		esac
 	done
 } # CheckBatteryHealth
 BatteryHealthGraph=$(CheckBatteryHealth)
 case ${BatteryHealthGraph} in
-	*condition=2)
+	*condition=2*)
 		OKState="2 CRIT"
 		BatteryHealth=", battery condition: $(system_profiler SPPowerDataType | awk -F": " '/Condition/ {print $2}')"
 		;;
-	*condition=1)
+	*condition=1*)
 		OKState="1 WARN"
 		BatteryHealth=", battery condition: $(system_profiler SPPowerDataType | awk -F": " '/Condition/ {print $2}')"
 		;;
@@ -499,8 +504,13 @@ pmset -g batt | grep "InternalBattery" | while read ; do
 	Percentage=$(awk -F";" '{print $1}' <<<${REPLY} | awk -F" " '{print $3}' | tr -d -c '[:alnum:]')
 	BattStatus=$(awk -F";" '{print $2}' <<<${REPLY})
 	VerboseOutput=$(awk -F";" '{print $3}' <<<${REPLY} | sed 's/\ present/, battery present/')
+	case ${VerboseOutput} in
+		*"not charging"*)
+			OKState="1 WARN"
+			;;
+	esac
 	Remaining=$(awk -F" " '{print $1}' <<<${VerboseOutput})
-	[ "X${Remaining}" = "X" ] || RemainingMinutes=$(( $(( ${Remaining%:*} * 60 )) + ${Remaining##*:} ))
+	[ "X${Remaining}" = "X" -o "X${Remaining}" = "X(no" ] || RemainingMinutes=$(( $(( ${Remaining%:*} * 60 )) + ${Remaining##*:} ))
 	if [ ${Percentage} -le 10 ]; then
 		CheckStatus="2 CRIT"
 	elif [ ${Percentage} -le 25 ]; then
