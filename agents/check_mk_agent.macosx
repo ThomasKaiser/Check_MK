@@ -233,8 +233,18 @@ echo "SwapFree: $(echo "( $compressedpages - $(vm_stat | grep "occupied by compr
 # Report whole vm_stat output as 'Swap and Paging' sensor to really get all
 # the details and to decide how much memory is enough, see for example
 # https://github.com/ThomasKaiser/Knowledge/blob/master/articles/Exploring_Apple_Silicon_on_MacBookAir10.md#testing-different-hardware-configurations-on-the-same-machine
-ParseVM_Stat_Output() {
+Parse_Full_VM_Stat_Output() {
+	# this will result in 24 graphs for this sensor
 	vm_stat | grep -v Mach | sed -e 's/\.$//' -e 's/"//g' | while read ; do
+		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
+		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
+		echo -e " ${Attribute}=${Value}\c"
+	done
+} # Parse_Full_VM_Stat_Output
+ParseVM_Stat_Output() {
+	# this will limit the count of graphs to the reasonable ones to understand 
+	# 'Is the machine's memory too low?'
+	vm_stat | egrep "free|zero|ompre|ins:|outs:" | sed -e 's/\.$//' -e 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
 		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
 		echo -e " ${Attribute}=${Value}\c"
