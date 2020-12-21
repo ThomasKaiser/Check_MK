@@ -262,11 +262,17 @@ elif [ ${CountOfSwapFiles} -gt 0 ]; then
 else
 	CheckStatus="0 OK"
 fi
-RunningApps="$(ps auxww | grep "/Applications/")"
-AllApps=$(grep -c MacOS <<<"${RunningApps}")
-AdobeApps=$(grep -i -c adobe <<<"${RunningApps}")
-MSApps=$(grep -i -c microsoft <<<"${RunningApps}")
-echo -e "<<<mrpe>>>\n(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} microsoft_apps=${MSApps}${VMStatGraph}"
+RunningApps="$(ps auxw -o rss,vsz,command)"
+AllApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -c MacOS)
+AdobeApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -i -c adobe)
+MSApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -i -c microsoft)
+RAMSafari=$(( $(grep Safari <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+RAMChrome=$(( $(grep Chrome <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+RAMFF=$(( $(grep Firefox <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+RAMMS=$(( $(grep -i microsoft <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+RAMAdobe=$(( $(grep -i adobe <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+
+echo -e "<<<mrpe>>>\n(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} adobe_ram=${RAMAdobe} microsoft_apps=${MSApps} microsoft_ram=${RAMMS} safari_ram=${RAMSafari} firefox_ram=${RAMFF} chrome_ram=${RAMChrome}${VMStatGraph}"
 
 echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
