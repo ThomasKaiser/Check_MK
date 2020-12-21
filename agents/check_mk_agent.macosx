@@ -254,15 +254,11 @@ ParseVM_Stat_Output() {
 ScaleFactor=$(( 1048576 / ${pagesize} ))
 VMStatGraph=$(ParseVM_Stat_Output)
 CountOfSwapFiles=$(ls /var/vm/swapfile* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
-CountOfCores=$(ls /var/vm/*core* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
 VMStatus="${CountOfSwapFiles} swapfile(s)"
 if [ ${CountOfSwapFiles} -gt 1 ]; then
 	CheckStatus="2 CRIT"
 elif [ ${CountOfSwapFiles} -gt 0 ]; then
 	CheckStatus="1 WARN"
-elif [ ${CountOfCores} -gt 0 ]; then
-	CheckStatus="1 WARN"
-	VMStatus="${VMStatus}, ${CountOfCores} corefile(s)"
 else
 	CheckStatus="0 OK"
 fi
