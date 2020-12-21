@@ -263,9 +263,9 @@ else
 	CheckStatus="0 OK"
 fi
 RunningApps="$(ps auxww | grep "/Applications/")"
-AllApps=$(wc -l <<<"${RunningApps}" | tr -d -c '[:digit:]')
-AdobeApps=$(grep -i adobe <<<"${RunningApps}" | wc -l | tr -d -c '[:digit:]')
-MSApps=$(grep -i microsoft <<<"${RunningApps}" | wc -l | tr -d -c '[:digit:]')
+AllApps=$(grep -c MacOS <<<"${RunningApps}")
+AdobeApps=$(grep -i -c adobe <<<"${RunningApps}")
+MSApps=$(grep -i -c microsoft <<<"${RunningApps}")
 echo -e "<<<mrpe>>>\n(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} microsoft_apps=${MSApps}${VMStatGraph}"
 
 echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))"
@@ -426,25 +426,25 @@ if type smartctl >/dev/null 2>&1
 then
     echo '<<<smart>>>'
     diskutil list | grep -v 'virtual)' | awk -F" " '/(internal)/ {print $1}' | while read ; do
-        DNAME="$(smartctl -d ata -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
+        DNAME="$(smartctl -s on -d ata -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
         if [ -n "${DNAME}" ]; then
             # SATA
             MODEL="$(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
             case ${REPLY} in
             	/dev/disk0)
             		# report internal SSD as /dev/disk0 to be consistent with NVMe reporting
-            		smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|/dev/disk0 ATA $MODEL |"
+            		smartctl -s on -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|/dev/disk0 ATA $MODEL |"
             		;;
             	*)
-		            smartctl -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|$DNAME ATA $MODEL |"
+		            smartctl -s on -v 9,raw48 -A $REPLY | grep -E "Offline|Always" | sed "s|^|$DNAME ATA $MODEL |"
 		            ;;
 		    esac
         else
-            DNAME="$(smartctl -d nvme -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
+            DNAME="$(smartctl -s on -d nvme -i -f brief $REPLY | grep -v 'Family' | grep -E 'Model|^Serial Number' | sed 's/^.*\(  .*\).*$/\1/' | tr '\n' '_' | sed -e 's/  //g' -e 's/ /_/g' -e 's/_$//' -e 's/^APPLE_//')"
             if [ -n "${DNAME}" ]; then
                 # NVME
                 echo "${REPLY} NVME $(sed 's/\_[^.]\{0,15\}$//g' <<<${DNAME})"
-                smartctl -d nvme -A $REPLY | sed -e '1,5d; /^$/d'
+                smartctl -s on -d nvme -A $REPLY | sed -e '1,5d; /^$/d'
             fi
         fi
     done
