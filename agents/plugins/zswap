@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Monitor zswap usage on Linux. Takes the raw values from sysfs and
-# feeds them as graphs into Check_MK.
+# feeds them as graphs into Check_MK if DEBUG=TRUE:
 #
 # root@athene:/sys/kernel/debug/zswap# grep -R .
 # duplicate_entry:0
@@ -15,12 +15,18 @@
 # stored_pages:248801
 # written_back_pages:0
 #
-# Only exceptions: pool_total_size will be converted from bytes to MB
+# Unless DEBUG=TRUE only compression_ratio, pool_total_size_mb, 
+# stored_size_mb and same_filled_pages (if available) will be reported.
+#
+# Two exceptions: pool_total_size will be converted from bytes to MB
 # and reported as pool_total_size_mb, stored_pages will be converted
 # from pages to MB and reported as stored_size_mb
 #
-# Unless DEBUG=TRUE only compression_ratio, pool_total_size_mb, 
-# stored_size_mb and same_filled_pages (if available) will be reported.
+# In case the plugin detects that zswap is not in use it will simply
+# exit. In case it detects zswap and zram running in parallel the
+# status will change to UNKN.
+#
+# (c) Thomas Kaiser, 2020.
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -40,9 +46,25 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 DEBUG=FALSE # set to TRUE to get all available statistics in raw format
 
+if [ ! -d /sys/module/zswap/parameters ]; then
+	# zswap not available so exit right now
+	exit 0
+fi
+
+# check whether swap is enabled and zram and zswap might coexist:
+Zram_Devices=$(sed 1d /proc/swaps | grep -c '^/dev/zram')
+Non_Zram_Devices=$(sed 1d /proc/swaps | grep -c -v '^/dev/zram')
+if [ ${Zram_Devices} -gt 0 -a ${Non_Zram_Devices} -gt 0 ]; then
+	echo -e "<<<mrpe>>>\n(${0##*/}) Zswap 3 UNKN - Both ZRAM and ZSWAP are active at the same time. Check configuration please."
+	exit 0
+elif [ ${Non_Zram_Devices} -eq 0 ]; then
+	# zswap not active so exit right now
+	exit 0
+fi
+
 if [ ! -d /sys/kernel/debug/zswap ]; then
 	echo -e "<<<mrpe>>>\n(${0##*/}) Zswap 3 UNKN - /sys/kernel/debug/zswap not accessible, no zswap stats available"
-	exit
+	exit 0
 fi
 
 ZswapStats="$(grep -R . /sys/kernel/debug/zswap/ | while read ; do sed 's/:/=/' <<< ${REPLY##*/} ; done | tr "\n" " ")"
@@ -54,27 +76,31 @@ if [ ${pool_total_size} -gt 0 ]; then
 fi
 
 # convert size in memory and on disk to MB
-total_size_mb=$(awk '{printf ("%0.2f",$1/1048576); }' <<<"${pool_total_size}")
+pool_total_size_mb=$(awk '{printf ("%0.2f",$1/1048576); }' <<<"${pool_total_size}")
 stored_size_mb=$(awk '{printf ("%0.2f",$1/256); }' <<<"${stored_pages}")
 
+# read module parameters
 read max_pool_percent </sys/module/zswap/parameters/max_pool_percent 2>/dev/null
 read compressor </sys/module/zswap/parameters/compressor 2>/dev/null
 read zpool </sys/module/zswap/parameters/zpool 2>/dev/null
+if [ -n ${compressor} -a -n ${zpool} ]; then
+	ModuleParams="Using ${compressor}/${zpool}, "
+fi
 
 if [ ${pool_limit_hit} -eq 0 ]; then
 	CheckState="0 OK"
-	ZswapStatus="Using ${compressor}/${zpool}, ${total_size_mb} MB in RAM, ${stored_size_mb} MB on disk${CompressionStatus}"
+	ZswapStatus="${ModuleParams}${pool_total_size_mb} MB in RAM, ${stored_size_mb} MB on disk${CompressionStatus}"
 else
 	CheckState="1 WARN"
-	ZswapStatus="Using ${compressor}/${zpool}, ${total_size_mb} MB in RAM, ${stored_size_mb} MB on disk, ${pool_limit_hit} pool limit hits${CompressionStatus}"
+	ZswapStatus="${ModuleParams}${pool_total_size_mb} MB in RAM, ${stored_size_mb} MB on disk, ${pool_limit_hit} pool limit hits${CompressionStatus}"
 fi
 
 if [ "X${DEBUG}" = "XTRUE" ]; then
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} max_pool_percent=${max_pool_percent} ${ZswapStats}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} max_pool_percent=${max_pool_percent} ${ZswapStats}"
 elif [ -n ${same_filled_pages} ]; then
 	# same_filled_pages only available with recent kernels
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit} same_filled_pages=${same_filled_pages}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit} same_filled_pages=${same_filled_pages}"
 else
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit}"
 fi
 echo -e "<<<mrpe>>>\n(${0##*/}) Zswap ${CheckState} - ${ZswapStatus} | ${ZswapGraphs}"
