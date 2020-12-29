@@ -3,20 +3,24 @@
 # Monitor zswap usage on Linux. Takes the raw values from sysfs and
 # feeds them as graphs into Check_MK.
 #
-# root@athene:/sys/kernel/debug# grep -R . zswap/
-# zswap/same_filled_pages:0
-# zswap/stored_pages:0
-# zswap/pool_total_size:0
-# zswap/duplicate_entry:0
-# zswap/written_back_pages:0
-# zswap/reject_compress_poor:0
-# zswap/reject_kmemcache_fail:0
-# zswap/reject_alloc_fail:0
-# zswap/reject_reclaim_fail:0
-# zswap/pool_limit_hit:0
+# root@athene:/sys/kernel/debug/zswap# grep -R .
+# duplicate_entry:0
+# pool_limit_hit:0
+# pool_total_size:389521408
+# reject_alloc_fail:0
+# reject_compress_poor:0
+# reject_kmemcache_fail:0
+# reject_reclaim_fail:0
+# same_filled_pages:34247
+# stored_pages:248801
+# written_back_pages:0
 #
-# Only exception: pool_total_size will be converted to MB and sent
-# as pool_total_size_mb.
+# Only exceptions: pool_total_size will be converted from bytes to MB
+# and reported as pool_total_size_mb, stored_pages will be converted
+# from pages to MB and reported as stored_size_mb
+#
+# Unless DEBUG=TRUE only compression_ratio, pool_total_size_mb, 
+# stored_size_mb and same_filled_pages (if available) will be reported.
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -34,6 +38,8 @@
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
+DEBUG=FALSE # set to TRUE to get all available statistics in raw format
+
 if [ ! -d /sys/kernel/debug/zswap ]; then
 	echo -e "<<<mrpe>>>\n(${0##*/}) Zswap 3 UNKN - /sys/kernel/debug/zswap not accessible, no zswap stats available"
 	exit
@@ -43,9 +49,13 @@ ZswapStats="$(grep -R . /sys/kernel/debug/zswap/ | while read ; do sed 's/:/=/' 
 eval ${ZswapStats}
 if [ ${pool_total_size} -gt 0 ]; then
 	# https://unix.stackexchange.com/a/412760
-	compression_ratio=$(bc -l <<< "${stored_pages} * 4096 / ${pool_total_size}")
+	compression_ratio=$(awk -F" " '{printf ("%0.1f",$1*4096/$2); }' <<<"${stored_pages} ${pool_total_size}")
+	CompressionStatus=", compression ratio: ${compression_ratio}"
 fi
-total_size_mb=$(bc -l <<<"${pool_total_size} / 1048576")
+
+# convert size in memory and on disk to MB
+total_size_mb=$(awk '{printf ("%0.2f",$1/1048576); }' <<<"${pool_total_size}")
+stored_size_mb=$(awk '{printf ("%0.2f",$1/256); }' <<<"${stored_pages}")
 
 read max_pool_percent </sys/module/zswap/parameters/max_pool_percent 2>/dev/null
 read compressor </sys/module/zswap/parameters/compressor 2>/dev/null
@@ -53,9 +63,18 @@ read zpool </sys/module/zswap/parameters/zpool 2>/dev/null
 
 if [ ${pool_limit_hit} -eq 0 ]; then
 	CheckState="0 OK"
-	ZswapStatus="Using ${compressor}/${zpool}, $(cut -d'.' -f1 <<<${total_size_mb}) MB used"
+	ZswapStatus="Using ${compressor}/${zpool}, ${total_size_mb} MB in RAM, ${stored_size_mb} MB on disk${CompressionStatus}"
 else
 	CheckState="1 WARN"
-	ZswapStatus="Using ${compressor}/${zpool}, $(cut -d'.' -f1 <<<${total_size_mb}) MB used, ${pool_limit_hit} pool limit hits"
+	ZswapStatus="Using ${compressor}/${zpool}, ${total_size_mb} MB in RAM, ${stored_size_mb} MB on disk, ${pool_limit_hit} pool limit hits${CompressionStatus}"
 fi
-echo -e "<<<mrpe>>>\n(${0##*/}) Zswap ${CheckState} - ${ZswapStatus} | same_filled_pages=${same_filled_pages} stored_pages=${stored_pages} pool_total_size_mb=${total_size_mb} duplicate_entry=${duplicate_entry} written_back_pages=${written_back_pages} reject_compress_poor=${reject_compress_poor} reject_kmemcache_fail=${reject_kmemcache_fail} reject_alloc_fail=${reject_alloc_fail} reject_reclaim_fail=${reject_reclaim_fail} pool_limit_hit=${pool_limit_hit} compression_ratio=${compression_ratio} max_pool_percent=${max_pool_percent}"
+
+if [ "X${DEBUG}" = "XTRUE" ]; then
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} max_pool_percent=${max_pool_percent} ${ZswapStats}"
+elif [ -n ${same_filled_pages} ]; then
+	# same_filled_pages only available with recent kernels
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit} same_filled_pages=${same_filled_pages}"
+else
+	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit}"
+fi
+echo -e "<<<mrpe>>>\n(${0##*/}) Zswap ${CheckState} - ${ZswapStatus} | ${ZswapGraphs}"
