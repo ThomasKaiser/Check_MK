@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Check_MK Agent for Mac OS/X
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
@@ -163,7 +163,7 @@ export -f run_cached
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
 
-echo -e "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver"
+printf "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver\n"
 
 echo '<<<df>>>'
 # Check hfs+
@@ -238,7 +238,7 @@ Parse_Full_VM_Stat_Output() {
 	vm_stat | grep -v Mach | sed -e 's/\.$//' -e 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
 		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
-		echo -e " ${Attribute}=${Value}\c"
+		printf " ${Attribute}=${Value}"
 	done
 } # Parse_Full_VM_Stat_Output
 ParseVM_Stat_Output() {
@@ -247,7 +247,7 @@ ParseVM_Stat_Output() {
 	vm_stat | egrep "free|zero|ompre|ins:|outs:" | sed -e 's/\.$//' -e 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
 		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
-		echo -e " ${Attribute}=${Value}\c"
+		printf " ${Attribute}=${Value}"
 	done
 } # ParseVM_Stat_Output
 # report values in MB instead of pages (pagesize might change between OS releases)
@@ -266,15 +266,16 @@ RunningApps="$(ps auxw -o rss,vsz,command)"
 AllApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -c MacOS)
 AdobeApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -i -c adobe)
 MSApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -i -c microsoft)
-RAMSafari=$(( $(grep Safari <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
-RAMChrome=$(( $(grep Chrome <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
-RAMFF=$(( $(grep Firefox <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
-RAMMS=$(( $(grep -i microsoft <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
-RAMAdobe=$(( $(grep -i adobe <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+grep -q Safari <<<"${RunningApps}" && RAMSafari=$(( $(grep Safari <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+grep -q Chrome <<<"${RunningApps}" && RAMChrome=$(( $(grep Chrome <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+grep -q Firefox <<<"${RunningApps}" && RAMFF=$(( $(grep Firefox <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+grep -q -i microsoft <<<"${RunningApps}" && RAMMS=$(( $(grep -i microsoft <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
+grep -q -i adobe <<<"${RunningApps}" && RAMAdobe=$(( $(grep -i adobe <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
 
-echo -e "<<<mrpe>>>\n(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} adobe_ram=${RAMAdobe} microsoft_apps=${MSApps} microsoft_ram=${RAMMS} safari_ram=${RAMSafari} firefox_ram=${RAMFF} chrome_ram=${RAMChrome}${VMStatGraph}"
+echo "<<<mrpe>>>"
+echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} adobe_ram=${RAMAdobe} microsoft_apps=${MSApps} microsoft_ram=${RAMMS} safari_ram=${RAMSafari} firefox_ram=${RAMFF} chrome_ram=${RAMChrome}${VMStatGraph}"
 
-echo -e "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))"
+printf "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))\n"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
 # checks plugins with subchecks for parsing that output. Maybe reduce
 # the output size by grepping away totally useless parts
@@ -287,7 +288,7 @@ counter=0
 echo "[start_iplink]"
 while read -r eth; do
     counter=$((counter+1))
-    echo -n "${counter}: "
+    printf "${counter}: "
     # ip a show "$eth"
     ifconfig ${eth} | grep -E "mtu|ether|inet|media"
 done <<< "$interfaces"
@@ -316,10 +317,10 @@ for eth in $interfaces; do
     grep -q "media: autoselect" <<<"$cur_ifconfig" && autoselect=on || autoselect=off
 
     echo "[$eth]"
-    echo -e "\tSpeed: ${speed:-Unknown}"
-    echo -e "\tAuto-negotiation: $autoselect";
-    echo -e "\tLink detected: $link_detected"
-    echo -e "\tAddress: ${addr:-00:00:00:00:00:00}"
+    printf "\tSpeed: ${speed:-Unknown}\n"
+    printf "\tAuto-negotiation: $autoselect\n"
+    printf "\tLink detected: $link_detected\n"
+    printf "\tAddress: ${addr:-00:00:00:00:00:00}\n"
 done
 
 echo '<<<ps>>>'
@@ -401,7 +402,7 @@ then
 fi
 
 # Check macOS own powermetrics tool. Please be aware that querying SMC values is not
-# possible on all Mac models (eg. fails on 2018 Mac Mini)
+# possible on all Mac models (fails for example on Macmini8,1 and MacBookPro10,1)
 if type powermetrics >/dev/null 2>&1
 then
 	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc | egrep "die temp|Fan: |Thermal level" | awk -F": " '{print $2}' | awk -F" " '{print $1}')
@@ -413,9 +414,10 @@ then
 	CPUTemp=$(tr -d -c '[:digit:]' <<<$5)
 	GPUTemp=$(tr -d -c '[:digit:]' <<<$6)
 	if [ "X${CPUTemp}" != "X" ]; then
-		echo -e "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
+		printf "<<<lnx_thermal:sep(124)>>>\nCPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical\n"
 		echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
-		echo -e "<<<mrpe>>>\n(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
+		echo "<<<mrpe>>>"
+		echo "(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
 		if [ ${CPUThermalLevel} -ge 80 -o ${GPUThermalLevel} -ge 80 -o ${IOThermalLevel} -ge 80 ]; then
 			ThermalStatus="2 CRIT"
 		elif [ ${CPUThermalLevel} -ge 60 -o ${GPUThermalLevel} -ge 60 -o ${IOThermalLevel} -ge 60 ]; then
@@ -423,7 +425,8 @@ then
 		else
 			ThermalStatus="0 OK"
 		fi
-		echo -e "<<<mrpe>>>\n(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${CPUThermalLevel}, GPU: ${GPUThermalLevel}, I/O: ${IOThermalLevel} | cpu_thermal_level=${CPUThermalLevel} gpu_thermal_level=${GPUThermalLevel} io_thermal_level=${IOThermalLevel} "
+		echo "<<<mrpe>>>"
+		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${CPUThermalLevel}, GPU: ${GPUThermalLevel}, I/O: ${IOThermalLevel} | cpu_thermal_level=${CPUThermalLevel} gpu_thermal_level=${GPUThermalLevel} io_thermal_level=${IOThermalLevel} "
 	fi
 fi
 
@@ -494,7 +497,7 @@ if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
 			else
 				FanStatus="0 OK"
 			fi
-			echo -e "<<<mrpe>>>\n(${0##*/}) ${REPLY%=*}%20rpm ${FanStatus} - ${REPLY##*=} fan rotations per minute | ${GraphName}=${REPLY##*=}"
+			printf "<<<mrpe>>>\n(${0##*/}) ${REPLY%=*}%20rpm ${FanStatus} - ${REPLY##*=} fan rotations per minute | ${GraphName}=${REPLY##*=}\n"
 	done
 fi
 
@@ -505,28 +508,28 @@ CheckBatteryHealth() {
 	system_profiler SPPowerDataType | egrep "Cycle Count|Condition|Maximum Capacity|Charge Remaining|^      Serial Number" | sed -e 's/:\ /=/' -e 's/          //' | while read ; do
 		case ${REPLY%=*} in
 			Charge*)
-				echo -e " charge_remaining=${REPLY##*=}\c"
+				printf " charge_remaining=${REPLY##*=}"
 				;;
 			Maximum*)
-				echo -e " maximum_capacity=$(tr -d -c '[:digit:]' <<<${REPLY##*=})\c"
+				printf " maximum_capacity=$(tr -d -c '[:digit:]' <<<${REPLY##*=})"
 				;;
 			Cycle*)
-				echo -e " cycle_count=${REPLY##*=}\c"
+				printf " cycle_count=${REPLY##*=}"
 				;;
 			Condition)
 				if [ "X${REPLY##*=}" = "XNormal" ]; then
-					echo -e " condition=0\c"
+					printf " condition=0"
 				elif [ "X${REPLY##*=}" = "XService Recommended" ]; then
-					echo -e " condition=1\c"
+					printf " condition=1"
 				else
 					# fallback for either "Service Battery" or whatever other condition
 					# Apple already defined or will define in the future.
-					echo -e " condition=2\c"
+					printf " condition=2"
 				fi
 				;;
 			*Serial*)
 				ObfuscatedChagerSerial=$(tr -d -c '[:digit:]' <<<"${REPLY##*=}")
-				echo -e " charger_serial=${ObfuscatedChagerSerial}\c"
+				printf " charger_serial=${ObfuscatedChagerSerial}"
 				;;
 		esac
 	done
@@ -566,7 +569,8 @@ pmset -g batt | grep "InternalBattery" | while read ; do
 	else
 		CheckStatus="${OKState}"
 	fi
-	echo -e "<<<mrpe>>>\n(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage} remaining_minutes=${RemainingMinutes} charger_power=${ChargerWattage}${BatteryHealthGraph}"
+	echo "<<<mrpe>>>"
+	echo "(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage} remaining_minutes=${RemainingMinutes} charger_power=${ChargerWattage}${BatteryHealthGraph}"
 done
 
 # query security updates in Apt compatible way, check every 24 hours
