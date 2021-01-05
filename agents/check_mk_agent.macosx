@@ -428,10 +428,16 @@ then
 			fi
 			echo "<<<mrpe>>>"
 			echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${CPUThermalLevel}, GPU: ${GPUThermalLevel}, I/O: ${IOThermalLevel} | cpu_thermal_level=${CPUThermalLevel} gpu_thermal_level=${GPUThermalLevel} io_thermal_level=${IOThermalLevel} "
-		elif type osx-cpu-temp >/dev/null 2>&1
-		then
+		fi
+	else
+		# try osx-cpu-temp
+		CPUTemp=$(osx-cpu-temp 2>/dev/null | tr -d -c '[:digit:]')
+		if [ "X${CPUTemp}" = "X" -o "X${CPUTemp}" = "X00" ]; then
+			# do nothing, we're on ARM or osx-cpu-temp isn't working properly
+			:
+		else
 			echo "<<<lnx_thermal:sep(124)>>>"
-			echo "CPU|enabled|thermal|$(osx-cpu-temp | tr -d -c '[:digit:]')00|70000|passive|90000|critical"
+			echo "CPU|enabled|thermal|${CPUTemp}00|70000|passive|90000|critical"
 		fi
 	fi
 fi
