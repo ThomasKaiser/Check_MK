@@ -397,48 +397,48 @@ if [ -x /Applications/HardwareMonitor.app/Contents/MacOS/hwmonitor ]; then
 fi
 
 # Check macOS own powermetrics tool. Please be aware that querying SMC values is not
-# possible on all Mac models (fails for example on Macmini8,1, MacBookPro10,1 and M1
-# Macs). In this situation on Intel Macs do a fallback to osx-cpu-temp if available:
-# https://github.com/lavoiesl/osx-cpu-temp
+# possible on all Mac models (fails for example on Macmini8,1, MacBookPro10,1 and all
+# the M1 Macs). In such a situation try a fallback to osx-cpu-temp if installed:
+# https://github.com/lavoiesl/osx-cpu-temp (really only needed on Intel Macs where
+# powermetrics does not output SMC sensor data)
 
 if type powermetrics >/dev/null 2>&1
 then
-	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc 2>/dev/null | egrep "die temp|Fan: |Thermal level" | awk -F": " '{print $2}' | awk -F" " '{print $1}')
-	if [ "X${PowerMetrics}" != "X" ]; then
-		# Intel Mac, check whether thermal SMC sensors are available
-		set ${PowerMetrics}
-		CPUThermalLevel=$1
-		GPUThermalLevel=$2
-		IOThermalLevel=$3
-		FanRPM=$4
-		CPUTemp=$(tr -d -c '[:digit:]' <<<$5)
-		GPUTemp=$(tr -d -c '[:digit:]' <<<$6)
-		if [ "X${CPUTemp}" != "X" ]; then
-			echo "<<<lnx_thermal:sep(124)>>>"
-			echo "CPU|enabled|thermal|${CPUTemp}0|70000|passive|90000|critical"
-			echo "GPU|enabled|thermal|${GPUTemp}0|70000|passive|90000|critical"
-			echo "<<<mrpe>>>"
-			echo "(${0##*/}) Fan%20rpm 0 OK - ${FanRPM} fan rotations per minute | fan_rpm=${FanRPM}"
-			if [ ${CPUThermalLevel} -ge 80 -o ${GPUThermalLevel} -ge 80 -o ${IOThermalLevel} -ge 80 ]; then
-				ThermalStatus="2 CRIT"
-			elif [ ${CPUThermalLevel} -ge 60 -o ${GPUThermalLevel} -ge 60 -o ${IOThermalLevel} -ge 60 ]; then
-				ThermalStatus="1 WARN"
-			else
-				ThermalStatus="0 OK"
-			fi
-			echo "<<<mrpe>>>"
-			echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${CPUThermalLevel}, GPU: ${GPUThermalLevel}, I/O: ${IOThermalLevel} | cpu_thermal_level=${CPUThermalLevel} gpu_thermal_level=${GPUThermalLevel} io_thermal_level=${IOThermalLevel} "
-		fi
-	else
-		# try osx-cpu-temp
-		CPUTemp=$(osx-cpu-temp 2>/dev/null | tr -d -c '[:digit:]')
-		if [ "X${CPUTemp}" = "X" -o "X${CPUTemp}" = "X00" ]; then
-			# do nothing, we're on ARM or osx-cpu-temp isn't working properly
+	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc 2>/dev/null | sed -e 's/: /=/g' -e 's/\ C$//' -e 's/\ rpm$//' -e 's/\ /_/g' | tr '[:upper:]' '[:lower:]' | egrep "die_temp|^fan|thermal_level")
+	# for example: cpu_thermal_level=65 gpu_thermal_level=40 io_thermal_level=0 fan=1822.1 cpu_die_temperature=68.64 gpu_die_temperature=55.00
+	eval ${PowerMetrics}
+	if [ "X${cpu_die_temperature}" = "X" ]; then
+		# empty powermetrics output so try osx-cpu-temp instead
+		cpu_die_temperature=$(osx-cpu-temp 2>/dev/null | tr -d -c '[:digit:]')
+		if [ "X${cpu_die_temperature}" = "X" -o "X${cpu_die_temperature}" = "X00" ]; then
+			# do nothing, osx-cpu-temp isn't working properly or not installed
 			:
 		else
 			echo "<<<lnx_thermal:sep(124)>>>"
-			echo "CPU|enabled|thermal|${CPUTemp}00|70000|passive|90000|critical"
+			echo "CPU|enabled|thermal|${cpu_die_temperature}00|70000|passive|90000|critical"
 		fi
+	else
+		# report CPU temperature and also GPU temperature if available
+		echo "<<<lnx_thermal:sep(124)>>>"
+		echo "CPU|enabled|thermal|$(tr -d -c '[:digit:]' <<<${cpu_die_temperature})0|70000|passive|90000|critical"
+		[ "X${gpu_die_temperature}" != "X" ] && echo "GPU|enabled|thermal|$(tr -d -c '[:digit:]' <<<${gpu_die_temperature})0|70000|passive|90000|critical"
+	fi
+	# check for fan sensor
+	if [ "X${fan}" != "X" ]; then	
+		echo "<<<mrpe>>>"
+		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan} fan rotations per minute | fan_rpm=${fan}"
+	fi
+	# check for thermal level sensors
+	if [ "X${cpu_thermal_level}" != "X" ]; then
+		if [ ${cpu_thermal_level} -ge 80 -o ${gpu_thermal_level:-0} -ge 80 -o ${io_thermal_level:-0} -ge 80 ]; then
+			ThermalStatus="2 CRIT"
+		elif [ ${cpu_thermal_level} -ge 60 -o ${gpu_thermal_level:-0} -ge 60 -o ${io_thermal_level:-0} -ge 60 ]; then
+			ThermalStatus="1 WARN"
+		else
+			ThermalStatus="0 OK"
+		fi
+		echo "<<<mrpe>>>"
+		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} | cpu_thermal_level=${cpu_thermal_level} gpu_thermal_level=${gpu_thermal_level} io_thermal_level=${io_thermal_level}"
 	fi
 fi
 
@@ -459,23 +459,23 @@ if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
 
 	# calculate a SoC temperature averaging thermal values with "SOC" in their name
 	SoCTemps=$(curl --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/sensors" 2>/dev/null | awk -F'"' '/SOC/ {print $4}')
-	CountOfSoCSensors=$(wc -l <<<"${SoCTemps}")
+	CountOfSoCSensors=$(wc -l <<<"${SoCTemps}" | tr -d -c '[:digit:]')
 	SoCAvgTemp=$(echo "$(awk -F',' '{sum+=$1;} END{print sum;}' <<<"${SoCTemps}") / ${CountOfSoCSensors} * 1000" | bc -l | cut -f1 -d'.')
-	[ ${SoCAvgTemp} -eq 0 ] || echo "SoC|enabled|thermal|${SoCAvgTemp}|60000|passive|90000|critical"
+	[ ${SoCAvgTemp} -eq 0 ] || echo "CPU|enabled|thermal|${SoCAvgTemp}|70000|passive|90000|critical"
 
 	# if $AllSensors=TRUE expose each and every sensor to Check_MK
 	if [ "X${AllSensors}" = "XTRUE" ]; then
 		curl --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/sensors" 2>/dev/null | \
 			awk -F'"' '/:/ {print $2"="$4}' | sed -e 's/\ /_/g' | while read ; do
-				echo "${REPLY%=*}|enabled|thermal|${REPLY##*=}000|60000|passive|90000|critical"
+				echo "${REPLY%=*}|enabled|thermal|${REPLY##*=}000|70000|passive|90000|critical"
 		done
 	fi
 
 	# check whether fan data is available
 	curl --connect-timeout 1 "http://localhost:${iStatisticaPort}/api/fans" 2>/dev/null | \
-		awk -F'"' '/:/ {print $2"="$4}' | sed -e 's/\ /%20/g' | while read ; do
+		awk -F'"' '/:/ {print $2"="$4}' | sed -e 's/\ /%20/g' -e 's/%201=/=/' | while read ; do
 			GraphName=$(sed -e 's/%20/_/g' <<< "${REPLY%=*}" | tr '[:upper:]' '[:lower:]')
-			if [ ${REPLY##*=} -ge 4000 ]; then
+			if [ ${REPLY##*=} -ge 5000 ]; then
 				FanStatus="1 WARN"
 			else
 				FanStatus="0 OK"
@@ -586,10 +586,10 @@ pmset -g batt | grep "InternalBattery" | while read ; do
 	echo "(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage} remaining_minutes=${RemainingMinutes} charger_power=${ChargerWattage}${BatteryHealthGraph}"
 done
 
-# query security updates in Apt compatible way, check every 24 hours
+# query security updates in Apt compatible way, check every 3 hours
 RestartNeeded=0
 echo '<<<apt:sep(0)>>>'
-IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime 1 2>/dev/null)
+IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +180m 2>/dev/null)
 if [ $? -ne 0 -o "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	# file doesn't exist or is older than 24 hours: let's (re)create it
 	(softwareupdate -l 2>/dev/null | grep recommended >/var/run/de.arts-others.softwareupdatecheck) &
@@ -609,11 +609,11 @@ fi
 # Report reboot status since security updates might require a restart
 echo '<<<mrpe>>>'
 if [ ${RestartNeeded} -gt 1 ]; then
-	echo "(check_mk_agent.macosx) Reboot%20needed 1 WARN - ${RestartNeeded} pending security updates require a restart"
+	echo "(${0##*/}) Reboot%20needed 1 WARN - ${RestartNeeded} pending security updates require a restart"
 elif [ ${RestartNeeded} -gt 0 ]; then
-	echo "(check_mk_agent.macosx) Reboot%20needed 1 WARN - 1 pending security update requires a restart"
+	echo "(${0##*/}) Reboot%20needed 1 WARN - 1 pending security update requires a restart"
 else
-	echo "(check_mk_agent.macosx) Reboot%20needed 0 OK - no reboot required"
+	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
 fi
 
 ###############################
