@@ -437,8 +437,30 @@ then
 		else
 			ThermalStatus="0 OK"
 		fi
+		CountOfDisplays=$(system_profiler SPDisplaysDataType | grep -c "Resolution:")
+		case ${CountOfDisplays} in
+			0)
+				DisplayStatus="(no display connected)"
+				;;
+			1)
+				case ${Hardware} in
+					MacBook*)
+						DisplayStatus="(only LCD in use)"
+						;;
+					*)
+						DisplayStatus="(one display in use)"
+						;;
+				esac
+				;;
+			2)
+				DisplayStatus="(two displays in use)"
+				;;
+			*)
+				DisplayStatus="(${CountOfDisplays} displays in use)"
+				;;
+		esac
 		echo "<<<mrpe>>>"
-		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} | cpu_thermal_level=${cpu_thermal_level} gpu_thermal_level=${gpu_thermal_level} io_thermal_level=${io_thermal_level}"
+		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} ${DisplayStatus} | cpu_thermal_level=${cpu_thermal_level} gpu_thermal_level=${gpu_thermal_level} io_thermal_level=${io_thermal_level} displays=${CountOfDisplays}"
 	fi
 fi
 
@@ -480,7 +502,8 @@ if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
 			else
 				FanStatus="0 OK"
 			fi
-			printf "<<<mrpe>>>\n(${0##*/}) ${REPLY%=*}%20rpm ${FanStatus} - ${REPLY##*=} fan rotations per minute | ${GraphName}=${REPLY##*=}\n"
+			echo "<<<mrpe>>>"
+			echo "(${0##*/}) ${REPLY%=*}%20rpm ${FanStatus} - ${REPLY##*=} fan rotations per minute | ${GraphName}=${REPLY##*=}"
 	done
 fi
 
