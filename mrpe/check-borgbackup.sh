@@ -128,13 +128,13 @@ sec_last="$(${DATE} --date="${last}" '+%s')"
 # interpret the amount of fails
 if [ "${sec_crit}" -gt "${sec_last}" ]; then
 	state="${STATE_CRITICAL}"
-	msg="CRIT - last backup made on ${last}"
+	msg="CRIT - last push backup made on ${last}"
 elif [ "${sec_warn}" -gt "${sec_last}" ]; then
 	state="${STATE_WARNING}"
-	msg="WARN - last backup made on ${last}"
+	msg="WARN - last push backup made on ${last}"
 else
 	state="${STATE_OK}"
-	msg="OK - last backup made on ${last}"
+	msg="OK - last push backup made on ${last}"
 fi
 
 echo "${msg}"

@@ -444,8 +444,8 @@ then
 				;;
 			1)
 				case ${Hardware} in
-					MacBook*)
-						DisplayStatus="(only LCD in use)"
+					MacBook*|iMac*)
+						DisplayStatus="(only internal LCD in use)"
 						;;
 					*)
 						DisplayStatus="(one display in use)"

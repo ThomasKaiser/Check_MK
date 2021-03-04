@@ -45,3 +45,4 @@ It looks like this with a new M1 MacBook Air having plenty of hardware sensors, 
   * [SMART for ODROID HC2 and other JMS578 devices](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/smart-odroid-hc2)
   * [TimeMachine client based on Netatalk](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/timemachine_agent.linux)
   * [Znapzend / ZFS snapshot age](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-znapzend-age.sh)
+  * [Zswap](https://raw.githubusercontent.com/ThomasKaiser/Check_MK/master/agents/plugins/zswap)
