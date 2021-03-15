@@ -97,20 +97,21 @@ done
 
 COUNT_OF_CRITS=$(wc -l ${TMP_DIR}/crit 2>/dev/null | awk -F" " '{print $1}')
 COUNT_OF_WARNS=$(wc -l ${TMP_DIR}/warn 2>/dev/null | awk -F" " '{print $1}')
+ACCOUNT_NAMES=$(cat ${TMP_DIR}/crit-names ${TMP_DIR}/warn-names 2>/dev/null | tr "\n" "," | sed -e 's/\ ,$//' -e 's/\ ,/, /g' )
 rm -rf "${TMP_DIR}"
 
 if [ ${COUNT_OF_CRITS} -gt 1 ]; then
 	state="${STATE_CRITICAL}"
-	msg="CRIT - One or more certificates are about to expire in less than ${CRIT_TRESHOLD} days."
+	msg="CRIT - One or more certificates are about to expire in less than ${CRIT_TRESHOLD} days (${ACCOUNT_NAMES})."
 elif [ ${COUNT_OF_CRITS} -eq 1 ]; then
 	state="${STATE_CRITICAL}"
-	msg="CRIT - One certificate is about to expire in less than ${CRIT_TRESHOLD} days."
+	msg="CRIT - One certificate is about to expire in less than ${CRIT_TRESHOLD} days (${ACCOUNT_NAMES})."
 elif [ ${COUNT_OF_WARNS} -gt 1 ]; then
 	state="${STATE_WARNING}"
-	msg="WARN - One or more certificates are about to expire in less than ${WARN_TRESHOLD} days."
+	msg="WARN - One or more certificates are about to expire in less than ${WARN_TRESHOLD} days (${ACCOUNT_NAMES})."
 elif [ ${COUNT_OF_WARNS} -eq 1 ]; then
 	state="${STATE_WARNING}"
-	msg="WARN - One certificate is about to expire in less than ${WARN_TRESHOLD} days."
+	msg="WARN - One certificate is about to expire in less than ${WARN_TRESHOLD} days (${ACCOUNT_NAMES})."
 else
 	state="${STATE_OK}"
 	msg="OK - no certificates about to expire soon."
