@@ -79,17 +79,20 @@ WARN_DIFF=$(( ${WARN_TRESHOLD} * 86400 ))
 TIME_NOW=$(${DATE} '+%s')
 TMP_DIR="$(mktemp -d /tmp/${0##*/}.XXXXXX || exit 3)"
 
-${HTML2TEXT} "${CERT_HTML}" | awk -F": " '/Valid Until/ {print $2}' | while read ; do
+${HTML2TEXT} "${CERT_HTML}" >${TMP_DIR}/system_certmanager.txt
+awk -F": " '/Valid Until/ {print $2}' ${TMP_DIR}/system_certmanager.txt | while read ; do
 	EXPIRATION_DATE=$(${DATE} --date "${REPLY}" '+%s')
 	EXPIRATION_DIFF=$(( ${EXPIRATION_DATE} - ${TIME_NOW} ))
 
-	# interpret the amount of fails
+	# collect soon to expire certificates with account names
 	if [ ${EXPIRATION_DIFF} -lt ${CRIT_DIFF} ]; then
 		if [ ${EXPIRATION_DIFF} -gt 0 ]; then
+			grep -B7 "${REPLY}" ${TMP_DIR}/system_certmanager.txt | head -n1 | cut -c1-28 | sed 's/  */ /g' >>${TMP_DIR}/crit-names
 			echo ${EXPIRATION_DIFF} >>/${TMP_DIR}/crit
 		fi
 	elif [ ${EXPIRATION_DIFF} -lt ${WARN_DIFF} ]; then
 		if [ ${EXPIRATION_DIFF} -gt 0 ]; then
+			grep -B7 "${REPLY}" ${TMP_DIR}/system_certmanager.txt | head -n1 | cut -c1-28 | sed 's/  */ /g' >>${TMP_DIR}/warn-names
 			echo ${EXPIRATION_DIFF} >>/${TMP_DIR}/warn
 		fi
 	fi
