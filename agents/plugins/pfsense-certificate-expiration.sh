@@ -97,7 +97,7 @@ done
 
 COUNT_OF_CRITS=$(wc -l ${TMP_DIR}/crit 2>/dev/null | awk -F" " '{print $1}')
 COUNT_OF_WARNS=$(wc -l ${TMP_DIR}/warn 2>/dev/null | awk -F" " '{print $1}')
-# rm -rf "${TMP_DIR}"
+rm -rf "${TMP_DIR}"
 
 if [ ${COUNT_OF_CRITS} -gt 1 ]; then
 	state="${STATE_CRITICAL}"
