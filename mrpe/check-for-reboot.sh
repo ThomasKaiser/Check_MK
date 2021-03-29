@@ -27,6 +27,8 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin
+
 if [ -f /var/run/reboot-required ]; then
 	# reboot needed?
 	if [ -f ${0%/*}/check-canonical-livepatch.sh -a -x /snap/bin/canonical-livepatch ]; then
@@ -80,6 +82,16 @@ if [ -f /var/run/reboot-required ]; then
 else
 	ExitCode=0
 	Summary="no reboot required"
+fi
+
+# Univention Corporate server
+type ucr >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+	UCSRebootStatus="$(ucr get update/reboot/required)"
+	if [ "X${UCSRebootStatus}" = "Xtrue" ]; then
+		ExitCode=2
+		Summary="some UCS packages require a reboot"
+	fi
 fi
 
 case ${ExitCode} in
