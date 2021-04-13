@@ -222,11 +222,11 @@ echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Proce
 # first and usual choice if memory pressure increases
 echo '<<<statgrab_mem>>>'
 pagesize=$(vm_stat | grep Mach | awk '{print $8}')
-compressedpages=$(vm_stat | grep "stored in compressor:" | awk '{print $5}')
-MemTotal=$(echo $(sysctl -n hw.memsize)/1024 | bc)
-MemFree=$(echo "( $(vm_stat | grep speculative: | awk '{print $3}') + $(vm_stat | grep inactive: | awk '{print $3}') + $(vm_stat | grep free: | awk '{print $3}') ) * $pagesize / 1024" | bc)
-SwapTotal=$(echo "$compressedpages * $pagesize / 1024" | bc)
-SwapFree=$(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize / 1024" | bc)
+compressedpages=$(vm_stat | awk '/stored in compressor:/ {print $5}' | sed 's/\.$//')
+MemTotal=$(sysctl -n hw.memsize)
+MemFree=$(echo "( $(vm_stat | grep speculative: | awk '{print $3}') + $(vm_stat | grep inactive: | awk '{print $3}') + $(vm_stat | grep free: | awk '{print $3}') ) * $pagesize" | bc)
+SwapTotal=$(( ${compressedpages} * ${pagesize} ))
+SwapFree=$(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize" | bc)
 echo "mem.cache 0"
 echo "mem.free ${MemFree}"
 echo "mem.total ${MemTotal}"
@@ -845,3 +845,4 @@ then
 	done
 	popd > /dev/null
 fi
+
