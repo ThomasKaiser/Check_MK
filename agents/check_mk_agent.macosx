@@ -220,13 +220,20 @@ echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Proce
 
 # compressed memory will be incorrectly reported as swap since this is macOS'
 # first and usual choice if memory pressure increases
-echo '<<<mem>>>'
+echo '<<<statgrab_mem>>>'
 pagesize=$(vm_stat | grep Mach | awk '{print $8}')
 compressedpages=$(vm_stat | grep "stored in compressor:" | awk '{print $5}')
-echo "MemTotal: $(echo $(sysctl -n hw.memsize)/1024 | bc) kB"
-echo "MemFree: $(echo "( $(vm_stat | grep speculative: | awk '{print $3}') + $(vm_stat | grep inactive: | awk '{print $3}') + $(vm_stat | grep free: | awk '{print $3}') ) * $pagesize / 1024" | bc) kB"
-echo "SwapTotal: $(echo "$compressedpages * $pagesize / 1024" | bc) kB"
-echo "SwapFree: $(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize / 1024" | bc) kB"
+MemTotal=$(echo $(sysctl -n hw.memsize)/1024 | bc)
+MemFree=$(echo "( $(vm_stat | grep speculative: | awk '{print $3}') + $(vm_stat | grep inactive: | awk '{print $3}') + $(vm_stat | grep free: | awk '{print $3}') ) * $pagesize / 1024" | bc)
+SwapTotal=$(echo "$compressedpages * $pagesize / 1024" | bc)
+SwapFree=$(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize / 1024" | bc)
+echo "mem.cache 0"
+echo "mem.free ${MemFree}"
+echo "mem.total ${MemTotal}"
+echo "mem.used $(( ${MemTotal} - ${MemFree} ))"
+echo "swap.free ${SwapFree}"
+echo "swap.total ${SwapTotal}"
+echo "swap.used $(( ${SwapTotal} - ${SwapFree} ))"
 # FIXME: Just call vm_stat here, write a check plugin that uses that
 # native output of vm_stat
 
