@@ -280,7 +280,7 @@ grep -q -i microsoft <<<"${RunningApps}" && RAMMS=$(( $(grep -i microsoft <<<"${
 grep -q -i adobe <<<"${RunningApps}" && RAMAdobe=$(( $(grep -i adobe <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
 
 echo "<<<mrpe>>>"
-echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles} all_apps=${AllApps} adobe_apps=${AdobeApps} adobe_ram=${RAMAdobe} microsoft_apps=${MSApps} microsoft_ram=${RAMMS} safari_ram=${RAMSafari} firefox_ram=${RAMFF} chrome_ram=${RAMChrome}${VMStatGraph}"
+echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles:-0} all_apps=${AllApps:-0} adobe_apps=${AdobeApps:-0} adobe_ram=${RAMAdobe:-0} microsoft_apps=${MSApps:-0} microsoft_ram=${RAMMS:-0} safari_ram=${RAMSafari:-0} firefox_ram=${RAMFF:-0} chrome_ram=${RAMChrome:-0}${VMStatGraph}"
 
 printf "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))\n"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
