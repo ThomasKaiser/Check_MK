@@ -163,6 +163,6 @@ fi
 
 [ -n ${PIGGYBACK_HOST} ] && echo "<<<<${PIGGYBACK_HOST}>>>>"
 echo -e "<<<mrpe>>>"
-echo "(${0##*/}) Expiring%20Certificates ${state} ${msg} | expiring_crit=${COUNT_OF_CRITS} expiring_warn=${COUNT_OF_WARNS}" 
+echo "(${0##*/}) Expiring%20Certificates ${state} ${msg} | expiring_crit=${COUNT_OF_CRITS:-0} expiring_warn=${COUNT_OF_WARNS:-0}" 
 [ -n ${PIGGYBACK_HOST} ] && echo "<<<<>>>>"
 
