@@ -571,7 +571,7 @@ CheckBatteryHealth() {
 				;;
 			*Serial*)
 				ObfuscatedChagerSerial=$(tr -d -c '[:digit:]' <<<"${REPLY##*=}")
-				printf " charger_serial=${ObfuscatedChagerSerial}"
+				printf " charger_serial=${ObfuscatedChagerSerial:-0}"
 				;;
 		esac
 	done
@@ -613,7 +613,7 @@ pmset -g batt | grep "InternalBattery" | while read ; do
 		CheckStatus="${OKState}"
 	fi
 	echo "<<<mrpe>>>"
-	echo "(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage} remaining_minutes=${RemainingMinutes} charger_power=${ChargerWattage}${BatteryHealthGraph}"
+	echo "(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage:-0} remaining_minutes=${RemainingMinutes:-0} charger_power=${ChargerWattage:-0}${BatteryHealthGraph}"
 done
 
 # query security updates in Apt compatible way, check every 3 hours
@@ -845,4 +845,3 @@ then
 	done
 	popd > /dev/null
 fi
-
