@@ -264,8 +264,6 @@ CountOfSwapFiles=$(ls /var/vm/swapfile* 2>/dev/null | wc -l | tr -d -c '[:digit:
 VMStatus="${CountOfSwapFiles} swapfile(s)"
 if [ ${CountOfSwapFiles} -gt 1 ]; then
 	CheckStatus="2 CRIT"
-elif [ ${CountOfSwapFiles} -gt 0 ]; then
-	CheckStatus="1 WARN"
 else
 	CheckStatus="0 OK"
 fi
@@ -433,7 +431,7 @@ then
 	# check for fan sensor
 	if [ "X${fan}" != "X" ]; then	
 		echo "<<<mrpe>>>"
-		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan} fan rotations per minute | fan_rpm=${fan}"
+		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan} fan rotations per minute | fan_rpm=${fan:-0}"
 	fi
 	# check for thermal level sensors
 	if [ "X${cpu_thermal_level}" != "X" ]; then
@@ -467,7 +465,7 @@ then
 				;;
 		esac
 		echo "<<<mrpe>>>"
-		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} ${DisplayStatus} | cpu_thermal_level=${cpu_thermal_level} gpu_thermal_level=${gpu_thermal_level} io_thermal_level=${io_thermal_level} displays=${CountOfDisplays}"
+		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} ${DisplayStatus} | cpu_thermal_level=${cpu_thermal_level:-0} gpu_thermal_level=${gpu_thermal_level:-0} io_thermal_level=${io_thermal_level:-0} displays=${CountOfDisplays:-0}"
 	fi
 fi
 
