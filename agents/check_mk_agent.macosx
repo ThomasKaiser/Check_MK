@@ -617,9 +617,9 @@ done
 # query security updates in Apt compatible way, check every 30 minutes
 RestartNeeded=0
 echo '<<<apt:sep(0)>>>'
-IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +28m 2>/dev/null)
-if [ $? -ne 0 -o "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# file doesn't exist or is older than 28 minutes: let's (re)create it
+CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
+if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+	# file doesn't exist or is older than 29 minutes -- let's (re)create it
 	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
 	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
 fi
@@ -645,8 +645,8 @@ else
 	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
 fi
 
-# get current user
-currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
+# If security updates are available, then display a nag screen to the user sitting in 
+# front of the machine.
 
 runAsUser() {
     if [[ ${currentUser} != "loginwindow" ]]; then
@@ -656,39 +656,42 @@ runAsUser() {
 }
 
 DisplayDialog() {
-	runAsUser osascript -e "button returned of (display dialog \"${1}\" with  title \"${4}\" buttons {\"${2}\", \"${3}\"} default button \"${3}\" with icon POSIX file \"${5}\")"
+	runAsUser osascript -e "button returned of (display dialog \"${1}\" with  title \"${5}\" buttons {\"${2}\", \"${3}\"} default button \"${4}\" with icon POSIX file \"${6}\" giving up after ${7})"
 } # DisplayDialog
 
 NotifyUpdate() {
 	message=${1}
 	button1=${2}
 	button2=${3}
+	defaultbutton=${4}
 	title="A&O Softwareupdate"
-	LOGO="/System/Applications/App Store.app/Contents/Resources/AppIcon.icns"
+	logo="/System/Applications/App Store.app/Contents/Resources/AppIcon.icns"
+	dialogtimeout=60
+	currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
 
-	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${title}" "${LOGO}")
-	if [[ $button != "Später" ]]; then
+	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${defaultbutton}" "${title}" "${logo}" "${dialogtimeout}")
+	if [[ ${button} != "${button2}" ]]; then
 		runAsUser open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
 	fi
 } # NotifyUpdate
 
-# Notify user about pending software updates every 30 minutes
-if [ ${RestartNeeded} -gt 0 -a "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+# Notify user about pending software updates only every 30 minutes
+if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	# if reboot is needed only inform users when lunch break or home time is due
 	CurrentHour=$(date '+%H')
 	case ${CurrentHour} in
 		12)
-			NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später"
+			NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später"
 			;;
 		17|18|19|20|21|22|23)
-			NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später"
+			NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später"
 			;;
 		*)
 			:
 			;;
 	esac
-elif [ -s /var/run/de.arts-others.softwareupdatecheck -a "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Log gehts" "Später"
+elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's"
 fi
 
 ###############################
