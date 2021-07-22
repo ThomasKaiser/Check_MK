@@ -617,19 +617,20 @@ done
 # query security updates in Apt compatible way, check every 30 minutes
 RestartNeeded=0
 echo '<<<apt:sep(0)>>>'
-IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +30m 2>/dev/null)
+IsOld=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +28m 2>/dev/null)
 if [ $? -ne 0 -o "X${IsOld}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# file doesn't exist or is older than 24 hours: let's (re)create it
+	# file doesn't exist or is older than 28 minutes: let's (re)create it
+	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
 	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
 fi
-if [ -s /var/run/de.arts-others.softwareupdatecheck ]; then
-	awk -F',' '{print $1}' </var/run/de.arts-others.softwareupdatecheck | \
+if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
+	awk -F',' '{print $1}' </var/run/de.arts-others.softwareupdatecheck.old | \
 		sed -e 's/^	//' -e 's/\ .\ .$//' -e 's/\ /_/g' | while read ; do
 		# fake Ubuntu packet report style
 		echo "Inst ${REPLY} [10.1ubuntu2.5] (10.1ubuntu2.6 Ubuntu:18.04/bionic-security [amd64])"
 	done
 	# check for needed restarts
-	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck)
+	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck.old)
 else
 	echo "No updates pending for installation"
 fi
@@ -648,19 +649,14 @@ fi
 currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
 
 runAsUser() {
-    if [[ $currentUser != "loginwindow" ]]; then
-        uid=$(id -u "$currentUser")
-        launchctl asuser $uid sudo -u $currentUser "$@"
+    if [[ ${currentUser} != "loginwindow" ]]; then
+        uid=$(id -u "${currentUser}")
+        launchctl asuser $uid sudo -u ${currentUser} "$@"
     fi
 }
 
 DisplayDialog() {
-	message=${1}
-	button1=${2}
-	button2=${3}
-	title=${4}
-	LOGO=${5}
-	runAsUser osascript -e "button returned of (display dialog \"$message\" with  title \"$title\" buttons {\"${button1}\", \"${button2}\"} default button \"${button2}\" with icon POSIX file \"$LOGO\")"
+	runAsUser osascript -e "button returned of (display dialog \"${1}\" with  title \"${4}\" buttons {\"${2}\", \"${3}\"} default button \"${3}\" with icon POSIX file \"${5}\")"
 } # DisplayDialog
 
 NotifyUpdate() {
@@ -672,7 +668,7 @@ NotifyUpdate() {
 
 	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${title}" "${LOGO}")
 	if [[ $button != "Später" ]]; then
-		open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
+		runAsUser open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
 	fi
 } # NotifyUpdate
 
@@ -681,8 +677,11 @@ if [ ${RestartNeeded} -gt 0 -a "X${IsOld}" = "X/var/run/de.arts-others.softwareu
 	# if reboot is needed only inform users when lunch break or home time is due
 	CurrentHour=$(date '+%H')
 	case ${CurrentHour} in
-		12|13|17|18|19|20|21|22|23)
-			NotifyUpdate "Wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später"
+		12)
+			NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später"
+			;;
+		17|18|19|20|21|22|23)
+			NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später"
 			;;
 		*)
 			:
