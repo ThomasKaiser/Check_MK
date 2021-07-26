@@ -635,25 +635,16 @@ else
 	echo "No updates pending for installation"
 fi
 
-# Report reboot status since security updates might require a restart
-echo '<<<mrpe>>>'
-if [ ${RestartNeeded} -gt 1 ]; then
-	echo "(${0##*/}) Reboot%20needed 1 WARN - ${RestartNeeded} pending security updates require a restart"
-elif [ ${RestartNeeded} -gt 0 ]; then
-	echo "(${0##*/}) Reboot%20needed 1 WARN - 1 pending security update requires a restart"
-else
-	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
-fi
-
 # If security updates are available, then display a nag screen to the user sitting in 
 # front of the machine.
 
 runAsUser() {
-    if [[ ${currentUser} != "loginwindow" ]]; then
-        uid=$(id -u "${currentUser}")
-        launchctl asuser $uid sudo -u ${currentUser} "$@"
-    fi
-}
+	currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
+	if [[ ${currentUser} != "loginwindow" ]]; then
+		uid=$(id -u "${currentUser}")
+		launchctl asuser $uid sudo -u ${currentUser} "$@"
+	fi
+} # runAsUser
 
 DisplayDialog() {
 	runAsUser osascript -e "button returned of (display dialog \"${1}\" with  title \"${5}\" buttons {\"${2}\", \"${3}\"} default button \"${4}\" with icon POSIX file \"${6}\" giving up after ${7})"
@@ -664,10 +655,9 @@ NotifyUpdate() {
 	button1=${2}
 	button2=${3}
 	defaultbutton=${4}
+	dialogtimeout=${5}
 	title="A&O Softwareupdate"
 	logo="/System/Applications/App Store.app/Contents/Resources/AppIcon.icns"
-	dialogtimeout=60
-	currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
 
 	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${defaultbutton}" "${title}" "${logo}" "${dialogtimeout}")
 	if [[ ${button} != "${button2}" ]]; then
@@ -675,23 +665,57 @@ NotifyUpdate() {
 	fi
 } # NotifyUpdate
 
-# Notify user about pending software updates only every 30 minutes
+# Check if reboot is needed since more than 47 hours
+if [ ${RestartNeeded} -gt 0 ]; then
+	if [ -f /var/run/de.arts-others.softwareupdatecheck.timestamp ]; then
+		TooOld=$(find /var/run/de.arts-others.softwareupdatecheck.timestamp -mtime +47h 2>/dev/null)
+	else
+		date > /var/run/de.arts-others.softwareupdatecheck.timestamp
+	fi
+else
+	rm /var/run/de.arts-others.softwareupdatecheck.timestamp 2>/dev/null
+fi
+
+# Report reboot status to Check_MK since security updates might require a restart
+echo '<<<mrpe>>>'
+if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
+	RebootStatus="2 CRIT"
+else
+	RebootStatus="1 WARN"
+fi
+if [ ${RestartNeeded} -gt 1 ]; then
+	echo "(${0##*/}) Reboot%20needed ${RebootStatus} - ${RestartNeeded} pending security updates require a restart"
+elif [ ${RestartNeeded} -gt 0 ]; then
+	echo "(${0##*/}) Reboot%20needed ${RebootStatus} - 1 pending security update requires a restart"
+else
+	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
+fi
+
+# Notify user about pending software updates only every 30 minutes. If a reboot is needed
+# for more than 2 days then annoy the user every 30 minutes otherwise only prior to lunch
+# break or home time:
 if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# if reboot is needed only inform users when lunch break or home time is due
-	CurrentHour=$(date '+%H')
-	case ${CurrentHour} in
-		12)
-			NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später"
-			;;
-		17|18|19|20|21|22|23)
-			NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später"
-			;;
-		*)
-			:
-			;;
-	esac
+	if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
+		# reboot needed for more than 2 days now. Let's annoy the user with a warn dialog
+		# that times out only after 5 minutes
+		NotifyUpdate "Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich." "Sofort einspielen" "Später" "Später" 300
+	else
+		# if reboot is needed since less than 48 hours only inform users when lunch break or home time is due
+		CurrentHour=$(date '+%H')
+		case ${CurrentHour} in
+			12)
+				NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 60
+				;;
+			17|18|19|20|21|22|23)
+				NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 60
+				;;
+			*)
+				:
+				;;
+		esac
+	fi
 elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's"
+	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's" 60
 fi
 
 ###############################
