@@ -409,7 +409,7 @@ fi
 
 if type powermetrics >/dev/null 2>&1
 then
-	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc 2>/dev/null | sed -e 's/: /=/g' -e 's/\ C$//' -e 's/\ rpm$//' -e 's/\ /_/g' | tr '[:upper:]' '[:lower:]' | egrep "die_temp|^fan|thermal_level")
+	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc 2>/dev/null | sed -e 's/: /=/g' -e 's/\ C$//' -e 's/\ rpm$//' -e 's/(//g' -e 's/)//g' -e 's/\ /_/g' | tr '[:upper:]' '[:lower:]' | egrep "die_temp|^fan|thermal_level")
 	# for example: cpu_thermal_level=65 gpu_thermal_level=40 io_thermal_level=0 fan=1822.1 cpu_die_temperature=68.64 gpu_die_temperature=55.00
 	eval ${PowerMetrics}
 	if [ "X${cpu_die_temperature}" = "X" ]; then
@@ -431,7 +431,8 @@ then
 	# check for fan sensor
 	if [ "X${fan}" != "X" ]; then	
 		echo "<<<mrpe>>>"
-		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan} fan rotations per minute | fan_rpm=${fan:-0}"
+		fan_rpm=$(cut -f1 -d_ <<<${fan})
+		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan_rpm} fan rotations per minute | fan_rpm=${fan_rpm:-0}"
 	fi
 	# check for thermal level sensors
 	if [ "X${cpu_thermal_level}" != "X" ]; then
@@ -697,17 +698,17 @@ fi
 if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
 		# reboot needed for more than 2 days now. Let's annoy the user with a warn dialog
-		# that times out only after 5 minutes
-		NotifyUpdate "Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich." "Sofort einspielen" "Später" "Später" 300
+		# that times out only after 10 minutes (600 seconds)
+		NotifyUpdate "Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich." "Sofort einspielen" "Später" "Später" 600
 	else
 		# if reboot is needed since less than 48 hours only inform users when lunch break or home time is due
 		CurrentHour=$(date '+%H')
 		case ${CurrentHour} in
 			12)
-				NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 60
+				NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
 				;;
 			17|18|19|20|21|22|23)
-				NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 60
+				NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
 				;;
 			*)
 				:
@@ -715,7 +716,7 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 		esac
 	fi
 elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's" 60
+	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's" 300
 fi
 
 ###############################
@@ -917,3 +918,4 @@ then
 	done
 	popd > /dev/null
 fi
+
