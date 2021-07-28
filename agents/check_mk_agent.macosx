@@ -615,15 +615,27 @@ pmset -g batt | grep "InternalBattery" | while read ; do
 	echo "(${0##*/}) ${SensorName} ${CheckStatus} - ${Percentage}%${BattStatus},${VerboseOutput}${BatteryHealth}${ChargerInfo} | ${GraphName}_percentage=${Percentage:-0} remaining_minutes=${RemainingMinutes:-0} charger_power=${ChargerWattage:-0}${BatteryHealthGraph}"
 done
 
-# query security updates in Apt compatible way, check every 30 minutes
+# Query security updates in Apt compatible way, check every 30 minutes.
+# First check whether /usr/local/bin/macos-security-update-notifier
+# exists and is executable. If so call it in the background and rely
+# on the script's output. The purpose of the helper script is to force
+# the users sitting in front of the Mac to do security updates:
+# https://github.com/ThomasKaiser/Check_MK/blob/master/helpers/macos-security-update-notifier.sh
+
 RestartNeeded=0
-echo '<<<apt:sep(0)>>>'
-CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
-if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# file doesn't exist or is older than 29 minutes -- let's (re)create it
-	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
-	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
+
+if [ -x /usr/local/bin/macos-security-update-notifier ]; then
+	/usr/local/bin/macos-security-update-notifier &
+else
+	CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
+	if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+		# file doesn't exist or is older than 29 minutes -- let's (re)create it
+		cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
+		(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
+	fi
 fi
+
+echo '<<<apt:sep(0)>>>'
 if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
 	awk -F',' '{print $1}' </var/run/de.arts-others.softwareupdatecheck.old | \
 		sed -e 's/^	//' -e 's/\ .\ .$//' -e 's/\ /_/g' | while read ; do
@@ -635,36 +647,6 @@ if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
 else
 	echo "No updates pending for installation"
 fi
-
-# If security updates are available, then display a nag screen to the user sitting in 
-# front of the machine.
-
-runAsUser() {
-	currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
-	if [[ ${currentUser} != "loginwindow" ]]; then
-		uid=$(id -u "${currentUser}")
-		launchctl asuser $uid sudo -u ${currentUser} "$@"
-	fi
-} # runAsUser
-
-DisplayDialog() {
-	runAsUser osascript -e "button returned of (display dialog \"${1}\" with  title \"${5}\" buttons {\"${2}\", \"${3}\"} default button \"${4}\" with icon POSIX file \"${6}\" giving up after ${7})"
-} # DisplayDialog
-
-NotifyUpdate() {
-	message=${1}
-	button1=${2}
-	button2=${3}
-	defaultbutton=${4}
-	dialogtimeout=${5}
-	title="A&O Softwareupdate"
-	logo="/System/Applications/App Store.app/Contents/Resources/AppIcon.icns"
-
-	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${defaultbutton}" "${title}" "${logo}" "${dialogtimeout}")
-	if [[ ${button} != "${button2}" ]]; then
-		runAsUser open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
-	fi
-} # NotifyUpdate
 
 # Check if reboot is needed since more than 47 hours
 if [ ${RestartNeeded} -gt 0 ]; then
@@ -690,33 +672,6 @@ elif [ ${RestartNeeded} -gt 0 ]; then
 	echo "(${0##*/}) Reboot%20needed ${RebootStatus} - 1 pending security update requires a restart"
 else
 	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
-fi
-
-# Notify user about pending software updates only every 30 minutes. If a reboot is needed
-# for more than 2 days then annoy the user every 30 minutes otherwise only prior to lunch
-# break or home time:
-if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
-		# reboot needed for more than 2 days now. Let's annoy the user with a warn dialog
-		# that times out only after 10 minutes (600 seconds)
-		NotifyUpdate "Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich." "Sofort einspielen" "Später" "Später" 600
-	else
-		# if reboot is needed since less than 48 hours only inform users when lunch break or home time is due
-		CurrentHour=$(date '+%H')
-		case ${CurrentHour} in
-			12)
-				NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
-				;;
-			17|18|19|20|21|22|23)
-				NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
-				;;
-			*)
-				:
-				;;
-		esac
-	fi
-elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's" 300
 fi
 
 ###############################
@@ -918,4 +873,3 @@ then
 	done
 	popd > /dev/null
 fi
-
