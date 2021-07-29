@@ -4,8 +4,30 @@
 # https://github.com/ThomasKaiser/Check_MK/blob/master/agents/check_mk_agent.macosx
 # If you want to use both check_mk_agent and this script the latter should be saved
 # as /usr/local/bin/macos-security-update-notifier (needs to be executable)
+#
+# (C) 2021 by Thomas Kaiser. Parts of the script borrowed from Installomator therefore
+# Apache License 2.0 applies: https://github.com/Installomator/Installomator/blob/dev/LICENSE
 
 RestartNeeded=0
+DialogTimeout=300
+case ${LANG} in
+	de_*)
+		LaterButton="Später"
+		NowButton="Sofort einspielen"
+		LunchText="Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
+		EveningText="Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
+		MinorUpdateText="Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann."
+		DeferText="Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich."
+		;;
+	*)
+		LaterButton="Later"
+		NowButton="Update now"
+		LunchText="It is lunch time and an important security update is due. Reboot required."
+		EveningText="Quitting time soon and an important security update is due. Reboot required."
+		MinorUpdateText="A minor security update needs to be installed. Quick and easy and no reboot needed."
+		DeferText="An important security update is due for more than 48 hours. Reboot required."
+		;;
+esac
 
 # check only every 30 minutes for available software updates
 CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
@@ -17,8 +39,6 @@ fi
 if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
 	# check for needed restarts
 	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck.old)
-else
-	echo "No updates pending for installation"
 fi
 
 # If security updates are available, then display a nag screen to the user sitting in 
@@ -69,16 +89,16 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 	if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
 		# reboot needed for more than 2 days now. Let's annoy the user with a warn dialog
 		# that times out only after 10 minutes (600 seconds)
-		NotifyUpdate "Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich." "Sofort einspielen" "Später" "Später" 600
+		NotifyUpdate "${DeferText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 2 ))
 	else
 		# if reboot is needed since less than 48 hours only inform users when lunch break or home time is due
 		CurrentHour=$(date '+%H')
 		case ${CurrentHour} in
 			12)
-				NotifyUpdate "Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
+				NotifyUpdate "${LunchText}" "${NowButton}" "${LaterButton}" "${LaterButton}" ${DialogTimeout}
 				;;
 			17|18|19|20|21|22|23)
-				NotifyUpdate "Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich." "Sofort einspielen" "Später" "Später" 300
+				NotifyUpdate "${EveningText}" "${NowButton}" "${LaterButton}" "${LaterButton}" ${DialogTimeout}
 				;;
 			*)
 				:
@@ -86,5 +106,5 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 		esac
 	fi
 elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann." "Los geht's" "Später" "Los geht's" 300
+	NotifyUpdate "${MinorUpdateText}" "${NowButton}" "${LaterButton}" "${NowButton}" ${DialogTimeout}
 fi

@@ -34,6 +34,7 @@ renice 19 $$ >/dev/null 2>&1
 
 # Remove locale settings to eliminate localized outputs where possible
 export LC_ALL=C
+OrigLANG=${LANG}
 unset LANG
 
 export MK_LIBDIR='/usr/local/lib/check_mk_agent'
@@ -625,7 +626,7 @@ done
 RestartNeeded=0
 
 if [ -x /usr/local/bin/macos-security-update-notifier ]; then
-	/usr/local/bin/macos-security-update-notifier &
+	LANG="${OrigLANG}" /usr/local/bin/macos-security-update-notifier &
 else
 	CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
 	if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
