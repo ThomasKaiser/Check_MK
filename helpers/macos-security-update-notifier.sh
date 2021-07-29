@@ -2,6 +2,7 @@
 #
 # Notification helper for macOS security updates. Can be used in conjunction with
 # https://github.com/ThomasKaiser/Check_MK/blob/master/agents/check_mk_agent.macosx
+# or launchd cronjobs or tools like JAMF Pro (execution every 15 minutes is fine).
 # If you want to use both check_mk_agent and this script the latter should be saved
 # as /usr/local/bin/macos-security-update-notifier (needs to be executable)
 #
@@ -9,8 +10,11 @@
 # Apache License 2.0 applies: https://github.com/Installomator/Installomator/blob/dev/LICENSE
 
 RestartNeeded=0
-DialogTimeout=300
-case ${LANG} in
+DialogTimeout=5 # value in minutes
+NotifyDelay=30 # value in minutes
+
+AppleLocale="$(defaults read -g AppleLocale)"
+case ${AppleLocale} in
 	de_*)
 		LaterButton="Später"
 		NowButton="Sofort einspielen"
@@ -29,8 +33,8 @@ case ${LANG} in
 		;;
 esac
 
-# check only every 30 minutes for available software updates
-CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +29m 2>/dev/null)
+# check only every ${NotifyDelay} minutes for available software updates
+CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +$(( ${NotifyDelay} - 1 ))m 2>/dev/null)
 if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	# file doesn't exist or is older than 29 minutes -- let's (re)create it
 	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
@@ -82,23 +86,22 @@ else
 	rm /var/run/de.arts-others.softwareupdatecheck.timestamp 2>/dev/null
 fi
 
-# Notify user about pending software updates only every 30 minutes. If a reboot is needed
-# for more than 2 days then annoy the user every 30 minutes otherwise only prior to lunch
-# break or home time:
+# If a reboot is needed for more than 2 days then annoy the user every ${NotifyDelay}
+# minutes otherwise only prior to lunch break or home time:
 if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	if [ "X${TooOld}" = "X/var/run/de.arts-others.softwareupdatecheck.timestamp" ]; then
 		# reboot needed for more than 2 days now. Let's annoy the user with a warn dialog
-		# that times out only after 10 minutes (600 seconds)
-		NotifyUpdate "${DeferText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 2 ))
+		# every ${NotifyDelay} minutes
+		NotifyUpdate "${DeferText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 120 ))
 	else
 		# if reboot is needed since less than 48 hours only inform users when lunch break or home time is due
 		CurrentHour=$(date '+%H')
 		case ${CurrentHour} in
 			12)
-				NotifyUpdate "${LunchText}" "${NowButton}" "${LaterButton}" "${LaterButton}" ${DialogTimeout}
+				NotifyUpdate "${LunchText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 60 ))
 				;;
 			17|18|19|20|21|22|23)
-				NotifyUpdate "${EveningText}" "${NowButton}" "${LaterButton}" "${LaterButton}" ${DialogTimeout}
+				NotifyUpdate "${EveningText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 60 ))
 				;;
 			*)
 				:
@@ -106,5 +109,5 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 		esac
 	fi
 elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	NotifyUpdate "${MinorUpdateText}" "${NowButton}" "${LaterButton}" "${NowButton}" ${DialogTimeout}
+	NotifyUpdate "${MinorUpdateText}" "${NowButton}" "${LaterButton}" "${NowButton}" $(( ${DialogTimeout} * 60 ))
 fi
