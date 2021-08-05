@@ -45,7 +45,7 @@ chmod 644 "${Store}/invalid-logins-this-month.txt" 2>/dev/null
 CheckAddress() {
 	CountOfIssues=0
 	Details=""
-	grep -q "${1}$" "${Store}/invalid-logins-this-month.txt"
+	grep -q " ${1}$" "${Store}/invalid-logins-this-month.txt"
 	if [ $? -ne 0 ]; then
 		echo "(${0##*/}) ${MTAName}%20User%20${1} 0 No invalid logins this month | invalid_logins=0"
 	else
@@ -53,10 +53,10 @@ CheckAddress() {
 			set ${line}
 			Details="${Details}, $2 $1"
 			CountOfIssues=$(( ${CountOfIssues} + $1 ))
-		done <<< $(grep "${1}$" "${Store}/invalid-logins-this-month.txt")
+		done <<< $(grep " ${1}$" "${Store}/invalid-logins-this-month.txt")
 		if [ ${CountOfIssues} -ge 100 ]; then
 			echo "(${0##*/}) ${MTAName}%20User%20${3} 2 ${CountOfIssues} invalid logins${Details} | invalid_logins=${CountOfIssues}"
-		elif [ ${CountOfIssues} -ge 5 ]; then
+		elif [ ${CountOfIssues} -ge 50 ]; then
 			echo "(${0##*/}) ${MTAName}%20User%20${3} 1 ${CountOfIssues} invalid logins${Details} | invalid_logins=${CountOfIssues}"
 		else
 			echo "(${0##*/}) ${MTAName}%20User%20${3} 0 ${CountOfIssues} invalid logins${Details} | invalid_logins=${CountOfIssues}"
@@ -65,16 +65,19 @@ CheckAddress() {
 } # CheckAddress
 
 MTAName="Kerio"
-TimePeriod="$(date +"%b/%Y")" # this month
-grep "^\[../${TimePeriod} " /mnt/zfs-store/logs/security.log | grep 'Invalid password' | awk -F" " '{print $3" "$8}' \
+TimePeriod="$(date +"%d/%b/%Y")" # this month
+grep "^\[${TimePeriod} " /mnt/zfs-store/logs/security.log | grep 'Invalid password' | awk -F" " '{print $3" "$8}' \
 	| sort | uniq -c | sed 's/\.$//' >"${Store}/invalid-logins-this-month.txt"
 
 # Check_MK Reporting
 echo '<<<mrpe>>>'
 
 # process new occurences
-( awk -F" " '{print $3}' <"${Store}/invalid-logins-this-month.txt" ; cat "${Store}/employees.txt" ) \
-	| sort | uniq >"${Store}/employees.txt"
+TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
+trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
+( awk -F" " '{print $3}' <"${Store}/invalid-logins-this-month.txt" 2>/dev/null ; cat "${Store}/employees.txt" ) \
+	| sort | uniq >"${TmpFile}"
+cat "${TmpFile}" >"${Store}/employees.txt"
 
 # Parse employees.txt and check whether there are invaliv logins this month:
 cat "${Store}/employees.txt" | while read ; do
