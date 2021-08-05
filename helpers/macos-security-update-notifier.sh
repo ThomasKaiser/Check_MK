@@ -13,40 +13,7 @@ RestartNeeded=0
 DialogTimeout=5 # value in minutes
 NotifyDelay=30 # value in minutes
 
-AppleLocale="$(defaults read -g AppleLocale)"
-case ${AppleLocale} in
-	de_*)
-		LaterButton="Später"
-		NowButton="Sofort einspielen"
-		LunchText="Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
-		EveningText="Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
-		MinorUpdateText="Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann."
-		DeferText="Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich."
-		;;
-	*)
-		LaterButton="Later"
-		NowButton="Update now"
-		LunchText="It is lunch time and an important security update is due. Reboot required."
-		EveningText="Quitting time soon and an important security update is due. Reboot required."
-		MinorUpdateText="A minor security update needs to be installed. Quick and easy and no reboot needed."
-		DeferText="An important security update is due for more than 48 hours. Reboot required."
-		;;
-esac
-
-# check only every ${NotifyDelay} minutes for available software updates
-CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +$(( ${NotifyDelay} - 1 ))m 2>/dev/null)
-if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# file doesn't exist or is older than 29 minutes -- let's (re)create it
-	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
-	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
-fi
-if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
-	# check for needed restarts
-	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck.old)
-fi
-
-# If security updates are available, then display a nag screen to the user sitting in 
-# front of the machine.
+# functions
 
 runAsUser() {
 	currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
@@ -74,6 +41,41 @@ NotifyUpdate() {
 		runAsUser open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
 	fi
 } # NotifyUpdate
+
+AppleLocale="$(runAsUser defaults read -g AppleLocale)"
+case ${AppleLocale} in
+	de_*)
+		LaterButton="Später"
+		NowButton="Sofort einspielen"
+		LunchText="Mittagspause in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
+		EveningText="Feierabend in Sicht und wichtiges Security-Update steht an. Neustart leider erforderlich."
+		MinorUpdateText="Kleines Security-Update steht an, das keinen Neustart erfordert, also kurz und schmerzlos direkt eingespielt werden kann."
+		DeferText="Wichtiges Security-Update steht seit mehr als 48 Stunden an. Neustart erforderlich."
+		;;
+	*)
+		LaterButton="Later"
+		NowButton="Update now"
+		LunchText="It is lunch time and an important security update is due. Reboot required."
+		EveningText="Quitting time soon and an important security update is due. Reboot required."
+		MinorUpdateText="A minor security update needs to be installed. Quick and easy and no reboot needed."
+		DeferText="An important security update is due for more than 48 hours. Reboot required."
+		;;
+esac
+
+# If security updates are available, then display a nag screen to the user sitting in 
+# front of the machine.
+
+# check only every ${NotifyDelay} minutes for available software updates
+CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +$(( ${NotifyDelay} - 1 ))m 2>/dev/null)
+if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+	# file doesn't exist or is older than 29 minutes -- let's (re)create it
+	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
+	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
+fi
+if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
+	# check for needed restarts
+	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck.old)
+fi
 
 # Check if reboot is needed since more than 47 hours
 if [ ${RestartNeeded} -gt 0 ]; then
