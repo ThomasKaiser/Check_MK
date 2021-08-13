@@ -108,32 +108,7 @@ CheckSoftwareUpdates() {
 		fi
 } # CheckSoftwareUpdates
 
-# define search for machines (old and primitive attempt)
-HardcodedBruteForce() {
-	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX)"
-	trap "rm \"${TmpFile}\" ; exit 0" 0 1 2 3 15
-
-	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computers \
-	| xmlstarlet sel -T -t -m /computers/computer -v "concat(id,' ',name)" -n - | while read ; do
-		set $REPLY
-		ComputerID="$1"
-		ComputerName="$2"
-		case ${ComputerName} in
-			# name pattern to look for
-			noah|autopkg|odr|odm|ais)
-				# piggybacked mode
-				echo "<<<<${ComputerName}>>>>"
-				CheckSoftwareUpdates ${ComputerID}
-				echo "<<<<>>>>"
-				;;
-			mac-*|mini-lab|jss)
-				CheckSoftwareUpdates ${ComputerID} ${ComputerName}
-				;;
-		esac
-	done
-} # HardcodedBruteForce
-
-# new attempt uses smart groups 1 (all macs) and 152 (clients) and processes clients
+# Query JSS API and use smart groups 1 (all macs) and 152 (clients) to process clients
 # directly and the difference between both groups as piggybacked servers.
 # Piggybacked servers will get a service "Software Updates" directly while all other
 # Macs will appear as services "Software Updates $hostname" on the host this check runs
@@ -145,6 +120,7 @@ SearchByGroups() {
 	ListAllMacs="${TmpDir}/all-macs"
 	ListClients="${TmpDir}/client-macs"
 	TmpFile="${TmpDir}/host-results"
+	ClientStatus="${TmpDir}/client-status"
 
 	curl -H "Accept: application/xml" -sfku ${jssCredentials} ${jssURL}JSSResource/computergroups/id/${AllMacsID} \
 		| xmlstarlet sel -T -t -m /computer_group/computers/computer -v "concat(id,' ',name)" -n - >"${ListAllMacs}"
@@ -161,9 +137,19 @@ SearchByGroups() {
 			ComputerID="$1"
 			ComputerName="$2"
 			# echo "<<<<jss>>>>" <-- set this if you want to appear these services on host 'jss'
-			CheckSoftwareUpdates ${ComputerID} ${ComputerName}
+			CheckSoftwareUpdates ${ComputerID} ${ComputerName} | tee -a "${ClientStatus}"
 			# echo "<<<<>>>>" <-- Needed for piggybacked operation
 		done
+		
+		# summarize status for all client macs
+		ClientsWarn=$(grep -c "1 WARN" "${ClientStatus}")
+		ClientsCrit=$(grep -c "2 CRIT" "${ClientStatus}")
+		echo '<<<mrpe>>>'
+		if [ ${ClientsWarn} -gt 0 -o ${ClientsCrit} -gt 0 ]; then
+			echo "(${0##*/}) Software%20Updates%20All%20Clients 1 WARN - $(( ${ClientsWarn} + ${ClientsCrit} )) macs unpatched|unpatched_macs=$(( ${ClientsWarn} + ${ClientsCrit} ))"
+		else
+			echo "(${0##*/}) Software%20Updates%20All%20Clients 0 OK - ${CountOfUpdates} macs unpatched|unpatched_macs=0"
+		fi
 		
 		# process difference between both lists as servers for piggyback operation
 		cat "${ListAllMacs}" "${ListClients}" | sort | uniq -u | while read  ; do
