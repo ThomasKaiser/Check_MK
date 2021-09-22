@@ -68,13 +68,16 @@ esac
 # check only every ${NotifyDelay} minutes for available software updates
 CheckNeeded=$(find /var/run/de.arts-others.softwareupdatecheck -mtime +$(( ${NotifyDelay} - 1 ))m 2>/dev/null)
 if [ $? -ne 0 -o "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
-	# file doesn't exist or is older than 29 minutes -- let's (re)create it
-	cp -p /var/run/de.arts-others.softwareupdatecheck /var/run/de.arts-others.softwareupdatecheck.old 2>/dev/null
-	(softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck) &
+	# file doesn't exist or is older than $NotifyDelay-1 minutes -- let's (re)create it
+	# First check that older instances of 'softwareupdate -l' are killed:
+	ps auxww | grep "softwareupdate -l$" | grep -v grep | awk -F" " '{print $2}' | while read ; do
+		kill ${REPLY}
+	done
+	softwareupdate -l 2>/dev/null | grep -i recommended >/var/run/de.arts-others.softwareupdatecheck
 fi
-if [ -s /var/run/de.arts-others.softwareupdatecheck.old ]; then
+if [ -s /var/run/de.arts-others.softwareupdatecheck ]; then
 	# check for needed restarts
-	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck.old)
+	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck)
 fi
 
 # Check if reboot is needed since more than 47 hours
@@ -100,7 +103,15 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 		CurrentHour=$(date '+%H')
 		case ${CurrentHour} in
 			12)
+				# annoy users between 12:00 and 12:59
 				NotifyUpdate "${LunchText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 60 ))
+				;;
+			13)
+				CurrentMinute=$(date '+%M')
+				if [ ${CurrentMinute} -le 31 ]; then
+					# annoy users only between 13:00 and 13:31
+					NotifyUpdate "${LunchText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 60 ))
+				fi
 				;;
 			17|18|19|20|21|22|23)
 				NotifyUpdate "${EveningText}" "${NowButton}" "${LaterButton}" "${LaterButton}" $(( ${DialogTimeout} * 60 ))
@@ -110,6 +121,6 @@ if [ ${RestartNeeded} -gt 0 -a "X${CheckNeeded}" = "X/var/run/de.arts-others.sof
 				;;
 		esac
 	fi
-elif [ -s /var/run/de.arts-others.softwareupdatecheck.old -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
+elif [ -s /var/run/de.arts-others.softwareupdatecheck -a "X${CheckNeeded}" = "X/var/run/de.arts-others.softwareupdatecheck" ]; then
 	NotifyUpdate "${MinorUpdateText}" "${NowButton}" "${LaterButton}" "${NowButton}" $(( ${DialogTimeout} * 60 ))
 fi
