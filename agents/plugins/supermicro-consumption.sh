@@ -19,13 +19,28 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-if [ -f /sys/devices/LNXSYSTM:00/LNXSYBUS:00/ACPI000D:00/power1_average ]; then
+
+SysFSNode="$(ls /sys/devices/LNXSYSTM\:00/LNXSYBUS\:0?/ACPI000D\:00/power1_average)"
+# 'find /sys/devices/LNXSYSTM\:00 -name power1_average' is ~20 times less efficient
+
+if [ -f "${SysFSNode}" ]; then
 	# set averaging interval to 30 seconds
-	echo 30000 >/sys/devices/LNXSYSTM:00/LNXSYBUS:00/ACPI000D:00/power1_average_interval 2>/dev/null
+	read AverageInterval <"${SysFSNode%/*}/power1_average_interval"
+	if [ ${AverageInterval} -ne 30000 ]; then
+		echo 30000 >"${SysFSNode%/*}/power1_average_interval" 2>/dev/null
+	fi
 	# read raw consumption
-	read RawConsumption </sys/devices/LNXSYSTM:00/LNXSYBUS:00/ACPI000D:00/power1_average
+	read RawConsumption <"${SysFSNode}"
 	if [ ${RawConsumption} -gt 0 ]; then
+		# report consumption in W
 		Consumption=$(( ${RawConsumption} / 1000000 ))
-		echo -e "<<<mrpe>>>\n(${0##*/}) Power%20Consumption 0 OK - ${Consumption}W | consumption=${Consumption:-0}"
+		# if power1_oem_info contains something report it in brackets
+		read OEMInfo <"${SysFSNode%/*}/power1_oem_info"
+		echo "<<<mrpe>>>"
+		if [ "X${OEMInfo}" = "X" ]; then
+			echo "(${0##*/}) Power%20Consumption 0 OK - ${Consumption}W | consumption=${Consumption:-0}"
+		else
+			echo "(${0##*/}) Power%20Consumption 0 OK - ${Consumption}W (${OEMInfo}) | consumption=${Consumption:-0}"
+		fi
 	fi
 fi
