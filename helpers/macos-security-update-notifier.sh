@@ -13,6 +13,8 @@ RestartNeeded=0
 DialogTimeout=5 # value in minutes
 NotifyDelay=30 # value in minutes
 
+AdditionalInfoURL="https://web.example.org/update-notifier-addon.txt"
+
 # functions
 
 runAsUser() {
@@ -36,7 +38,7 @@ NotifyUpdate() {
 	title="A&O Softwareupdate"
 	logo="/System/Applications/App Store.app/Contents/Resources/AppIcon.icns"
 
-	button=$(DisplayDialog "${message}" "${button1}" "${button2}" "${defaultbutton}" "${title}" "${logo}" "${dialogtimeout}")
+	button=$(DisplayDialog "${message}${AdditionalDisplayText}" "${button1}" "${button2}" "${defaultbutton}" "${title}" "${logo}" "${dialogtimeout}")
 	if [[ ${button} != "${button2}" ]]; then
 		runAsUser open /System/Library/PreferencePanes/SoftwareUpdate.prefPane
 	fi
@@ -86,6 +88,29 @@ if [ ${RestartNeeded} -gt 0 ]; then
 		TooOld=$(find /var/run/de.arts-others.softwareupdatecheck.timestamp -mtime +47h 2>/dev/null)
 	else
 		date > /var/run/de.arts-others.softwareupdatecheck.timestamp
+	fi
+	
+	# check whether additional information should be displayed in the nag dialog based
+	# on macOS version. Apple's behaviour trying to push users to most recent macOS is
+	# not wanted in most organizations where admins first have to evaluate what will
+	# break and what won't function any more prior to rolling out a major macOS update.
+	
+	# get major macOS number (10 for Catalina, 11 for Big Sur , 12 for Monterey)
+	OSVersion="$(sw_vers | awk -F" " '/ProductVersion/ {print $2}' | cut -f1 -d'.')"
+	
+	# additional info string fetched from the provided URL has to contain macOS version
+	# to be ignored as the first 2 characters immediately followed by the string that
+	# should be displayed if a version mismatch happend. Might look like this
+	# "12Please ignore macOS Monterey and click directly below on more information"
+	AdditionalInfo="$(curl -q "${AdditionalInfoURL}" 2>/dev/null)"
+	
+	if [ "X${AdditionalInfo}" != "X" ]; then
+		MostRecentMacOSVersion="$(cut -c-2 <<<"${AdditionalInfo}")"
+		if [ "X${OSVersion}" != "X${MostRecentMacOSVersion}" ]; then
+			# machine is not on most recent macOS version so display then
+			# provided warning to not update immediately:
+			AdditionalDisplayText="\n\n$(cut -c3- <<<"${AdditionalInfo}")"
+		fi
 	fi
 else
 	rm /var/run/de.arts-others.softwareupdatecheck.timestamp 2>/dev/null
