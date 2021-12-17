@@ -30,18 +30,18 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
 
 if type canonical-livepatch >/dev/null 2>&1 ; then
-	TmpFile="$(mktemp /tmp/${0##*/}.XXXXXX || exit 1)"
-	canonical-livepatch status >"${TmpFile}"
+	LivePatchStatus="$(canonical-livepatch status)"
 else
 	# no kernel live patching active. Exiting
 	exit 0
 fi
 
-checkState="$(awk -F": " '/checkState/ {print $2}' <"${TmpFile}")"
-patchState="$(awk -F": " '/patchState/ {print $2}' <"${TmpFile}")"
-kernelVersion="$(awk -F": " '/kernel/ {print $2}' <"${TmpFile}")"
-patchVersion="$(awk -F": " '/ version:/ {print $2}' <"${TmpFile}" | tr -d '[="=]')"
-isRunning="$(awk -F": " '/ running/ {print $2}' <"${TmpFile}")"
+checkState="$(awk -F": " '/checkState/ {print $2}' <<<"${LivePatchStatus}")"
+patchState="$(awk -F": " '/patchState/ {print $2}' <<<"${LivePatchStatus}")"
+kernelVersion="$(awk -F": " '/kernel/ {print $2}' <<<"${LivePatchStatus}")"
+patchVersion="$(awk -F": " '/ version:/ {print $2}' <<<"${LivePatchStatus}" | tr -d '[="=]')"
+tier="$(awk -F"(" '/^tier:/ {print $2}' <<<"${LivePatchStatus}" | tr -d ')')"
+isRunning="$(awk -F": " '/ running/ {print $2}' <<<"${LivePatchStatus}")"
 
 Result="OK"
 ExitCode=0
@@ -69,6 +69,13 @@ else
 	ExitCode=2
 fi
 
-echo "${Result} - kernel ${kernelVersion} (${patchVersion}), ${DaemonState}, ${checkState}, patch state: ${patchState}"
-rm "${TmpFile}"
+if [[ ${tier} == *"beta test"* ]]; then
+	AdditionalInfo=", ${tier}"
+	if [ ${ExitCode} -eq 0 ]; then
+		Result="WARNING"
+		ExitCode=1
+	fi
+fi
+
+echo "${Result} - kernel ${kernelVersion} (${patchVersion}), ${DaemonState}, ${checkState}, patch state: ${patchState}${AdditionalInfo}"
 exit ${ExitCode}

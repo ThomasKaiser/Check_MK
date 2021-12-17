@@ -42,16 +42,16 @@ NotifyUpdate() {
 	# on macOS version. Apple's behaviour trying to push users to most recent macOS is
 	# not wanted in most organizations where admins first have to evaluate what will
 	# break and what won't function any more prior to rolling out a major macOS update.
-	
+
 	# get major macOS number (10 for Catalina, 11 for Big Sur , 12 for Monterey)
 	OSVersion="$(sw_vers | awk -F" " '/ProductVersion/ {print $2}' | cut -f1 -d'.')"
-	
+
 	# additional info string fetched from the provided URL has to contain macOS version
 	# to be ignored as the first 2 characters immediately followed by the string that
 	# should be displayed if a version mismatch happend. Might look like this
 	# "12Please ignore macOS Monterey and click directly below on more information"
 	AdditionalInfo="$(curl -q "${AdditionalInfoURL}" 2>/dev/null)"
-	
+
 	if [ "X${AdditionalInfo}" != "X" ]; then
 		MostRecentMacOSVersion="$(cut -c-2 <<<"${AdditionalInfo}")"
 		if [ "X${OSVersion}" != "X${MostRecentMacOSVersion}" ]; then
@@ -105,10 +105,10 @@ if [ -s /var/run/de.arts-others.softwareupdatecheck ]; then
 	RestartNeeded=$(grep -c -i 'restart' /var/run/de.arts-others.softwareupdatecheck)
 fi
 
-# Check if reboot is needed since more than 47 hours
+# Check if reboot is needed since more than 23 hours
 if [ ${RestartNeeded} -gt 0 ]; then
 	if [ -f /var/run/de.arts-others.softwareupdatecheck.timestamp ]; then
-		TooOld=$(find /var/run/de.arts-others.softwareupdatecheck.timestamp -mtime +47h 2>/dev/null)
+		TooOld=$(find /var/run/de.arts-others.softwareupdatecheck.timestamp -mtime +23h 2>/dev/null)
 	else
 		date > /var/run/de.arts-others.softwareupdatecheck.timestamp
 	fi

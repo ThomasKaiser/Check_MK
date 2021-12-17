@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# Check status of NFON cloud telephony platform through status.nfon.com
+# HTTP output. Don't run this every minute to not overwhelm their status
+# mechanism. Put it for example in plugins/300 directory. The plugin uses
+# MRPE output syntax since I like spaces in service names.
+#
+# By default output is assigned to a host called 'nfon' via
+# Check_MK's piggyback mechanism. Adjust if needed.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Use piggyback mechanism to let the status appear below the virtual host
+# 'Internet'
+echo -e "<<<<nfon>>>>\n<<<mrpe>>>"
+
+type links >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+	echo "(${0##*/}) NFON%20Status 3 UNKN - No links binary found. Please install it"
+	echo '<<<<>>>>'
+	exit 0
+fi
+
+ServiceStatus="$(links -width 300 -dump https://status.nfon.com/ | head -n 100)"
+grep -q "Active Incident" <<<"${ServiceStatus}"
+case $? in
+	0)
+		grep -A 2 "Incident Status" <<<"${ServiceStatus}" | grep -q "Operational"
+		case $? in
+			1) 
+				# active incident
+				Message="$(awk -F']' '/Investigating/ {print $2}' <<<"${ServiceStatus}")"
+				Message="$(awk -F']' '/Identified/ {print $2}' <<<"${ServiceStatus}")"
+				echo "(${0##*/}) NFON%20Status 1 WARN -${Message}. Visit https://status.nfon.com/ for details | active_incident=1"
+				;;
+			*)
+				echo "(${0##*/}) NFON%20Status 0 OK - All fine | active_incident=0"
+				;;
+		esac
+		;;
+	*)
+		echo "(${0##*/}) NFON%20Status 0 OK - All fine | active_incident=0"
+		;;
+esac
+
+# end of piggybacked mode
+echo '<<<<>>>>'
