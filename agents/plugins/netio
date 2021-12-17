@@ -1,0 +1,226 @@
+#!/bin/bash
+#
+# Check_MK plugin to monitor 1-n Netio switchable powermeters using Check_MK's 
+# piggyback mechanism to report consumption values where they belong to.
+#
+# Needs a configuration file /etc/check_mk/netio.cfg that has to follow the
+# rules outlined in the commented example config:
+# https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/netio.cfg
+#
+# The plugin can be run on the Check_MK host itself or anywhere else. Only
+# requirement is network access to the Netio devices to be queried. All data
+# will be piggybacked so it really doesn't matter where this plugin lives as
+# long as it's UNIX like with a somewhat modern userland.
+#
+# Temporary data will be stored below /root/.netio-monitoring/ by default.
+#
+# Successfully tested (also in sub 5W conditions) with
+#
+# * PowerBOX 4Kx
+# * PowerCable REST 101x
+#
+# See https://www.netio-products.com/en/glossary/power-measurement for other
+# Netio models with an entry in 'Measured Power Outputs' column.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+DefaultSensorName="Consumption"
+ConfigFile=/etc/check_mk/netio.cfg
+TempDir="${HOME}/.netio-monitoring"
+History=60 # count of samples for averaged monitoring
+CurrentSamples=2 # count of samples for 'live' monitoring
+
+# functions
+error(){ echo -e "<<<mrpe>>>\n(${0##*/}) ${DefaultSensorName} $1 UNKN - $2"; exit 0; }
+
+# check prerequisits
+command -v curl >/dev/null 2>&1 || error 3 "No curl binary found. Please install it"
+[ -d "${TempDir}" ] || mkdir -m700 "${TempDir}" || \
+	error 3 "Unable to create ${TempDir}. Please check manually"
+
+# check config file
+[ -f "${ConfigFile}" ] || error 3 "${ConfigFile} does not exist"
+case $(ls -la "${ConfigFile}") in
+	"-rwx------"*|"-rw-------"*)
+		# correct permissions, parse the contents
+		NetioConfig="$(grep -v "^#" "${ConfigFile}" | sed '/^[[:space:]]*$/d')"
+		[ "X${NetioConfig}" = "X" ] && error 3 "${ConfigFile} contains no rules"
+		;;
+	*)
+		# insecure permissions, only root is allowed to read/write the file
+		error 3 "${ConfigFile} must not be writable/readable by anyone else than root"
+		;;
+esac
+
+# record processing timestamp
+TimeNow=$(date '+%s')
+
+# check Netio devices
+NetioDevices=$(cut -f1 -d'/' <<<"${NetioConfig}" | cut -f2 -d'@' | sort | uniq)
+for Device in ${NetioDevices} ; do
+	# check logon credentials
+	unset Credentials
+	grep -q "@${Device}" <<<"${NetioConfig}" && \
+		Credentials="--user $(awk -F'@' "/@${Device}\// {print \$1}" <<<"${NetioConfig}" | head -n1)"
+
+	# grab and check XML from device
+	curl -s -q --connect-timeout 5 ${Credentials} "http://${Device}/netio.xml" | tr '\015' '\012' \
+		>"${TempDir}/${Device}.xml" || error 3 "Can not retrieve http://${Device}/netio.xml"
+	XmlVer=$(grep '^<XmlVer>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g')
+	[ "X${XmlVer}" = "X" ] && error 3 "Can not parse XML on ${Device}"
+	if [ $(awk '{printf ("%0.0f",$1*10); }' <<<"${XmlVer}") -lt 24 ]; then
+		# Firmware too old
+		Firmware=$(grep '^<Version>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g')
+		error 3 "Firmware on ${Device} too old: v${Firmware}, XML API v${XmlVer}. Please update"
+	fi
+
+	# parse consumption data, read Current, PowerFactor and Energy values into an array
+	InputVoltage=$(grep '^<Voltage>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g')
+	OutputCurrentArray=($(grep '^<Current>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g' | tr '\n' ' '))
+	OutputPowerFactorArray=($(grep '^<PowerFactor>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g' | tr '\n' ' '))
+	EnergyArray=($(grep '^<Energy>' <"${TempDir}/${Device}.xml" | sed -e 's/\(<[^<][^<]*>\)//g' | tr '\n' ' '))
+
+	# process sockets on this device
+	if [ "X${Credentials}" = "X" ]; then
+		FilterPattern="^${Device}/"
+	else
+		FilterPattern="@${Device}/"
+	fi
+	grep "${FilterPattern}" <<<"${NetioConfig}" | cut -f2 -d'/' | while read ; do
+		unset WarnTreshold CritTreshold AvgWarnTreshold AvgCritTreshold AvgWarnValue AvgCritValue WarnValue CritValue
+		set ${REPLY}
+		NetioSocket=$1
+		PiggybackConfig=$2
+		WarnTreshold=$3
+		CritTreshold=$4
+		AvgWarnTreshold=$5
+		AvgCritTreshold=$6
+
+		if [ "X${PiggybackConfig}" != "X" ]; then
+			# only process config entries with hostname defined. Now check whether
+			# $PiggybackConfig contains a comma. If so, the part right of it will be
+			# the sensor's name
+			grep -q ',' <<<"${PiggybackConfig}"
+			case $? in
+				0)
+					# the hostname entry is 'hostname,sensorname' so we need to honour
+					# both and also create a different status file name (using a hash)
+					HostName="$(cut -f1 -d',' <<<"${PiggybackConfig}")"
+					StatusFile="${TempDir}/${HostName} $(cksum <<<"${PiggybackConfig}" | cut -f1 -d' ')-${Device}.dat"
+					SensorName="$(cut -f2 -d',' <<<"${PiggybackConfig}")"
+					;;
+				*)
+					HostName="${PiggybackConfig}"
+					StatusFile="${TempDir}/${HostName} ${Device}.dat"
+					SensorName="${DefaultSensorName}"
+					;;
+			esac
+
+			touch "${StatusFile}"
+
+			# get wH value from array
+			Energy=${EnergyArray[$(( ${NetioSocket} - 1 ))]}
+			# get output current from array
+			OutputCurrent=${OutputCurrentArray[$(( ${NetioSocket} - 1 ))]}
+			# get powerfactor from array
+			OutputPowerFactor=${OutputPowerFactorArray[$(( ${NetioSocket} - 1 ))]}
+			# calculate actual consumption
+			Consumption=$(awk -F" " '{printf ("%0.0f",$1*$2*$3); }' <<<"${InputVoltage} ${OutputCurrent} ${OutputPowerFactor}")
+
+			# determine more precise overall consumption based on Wh reporting. Read in
+			# oldest value if available
+			if [ -f "${StatusFile}" ]; then
+				LatestRecording="$(head -n1 "${StatusFile}")"
+				if [ "X${LatestRecording}" != "X" ]; then
+					set ${LatestRecording}
+					TimeLast=$1
+					EnergyLast=$2
+					TimeDiff=$(( ${TimeNow} - ${TimeLast} ))
+					EnergyDiff=$(( ${Energy} - ${EnergyLast} ))
+					EnergyLastHour=$(awk '{printf ("%0.0f",$1/$2*$3*1000); }' <<<"3600 ${TimeDiff} ${EnergyDiff}")
+				fi
+			fi
+
+			# record values. We keep as many as defined by ${History}
+			PriorValues="$(tail -n$(( ${History} -1 )) "${StatusFile}")"
+			CurrentConsumption="${TimeNow} ${Energy} ${Consumption} ${EnergyLastHour:-$Energy}"
+			echo -e "${PriorValues}\n${CurrentConsumption}" | sed '/^[[:space:]]*$/d' >"${StatusFile}"
+			NumberofSamples="$(wc -l <"${StatusFile}")"
+
+			# create average values for ${CurrentSamples} last current values
+			CurrentSum=$(tail -n${CurrentSamples} "${StatusFile}" | awk '{s+=$3} END {printf "%.0f", s}')
+			CurrentAverage=$(awk '{printf ("%0.2f",$1/1000); }' <<<$(( ${CurrentSum} / ${CurrentSamples} )) )
+
+			# create averaged value for all recorded sample values (based on Wh)
+			EnergySum=$(tail -n${NumberofSamples} "${StatusFile}" | awk '{s+=$4} END {printf "%.0f", s}')
+			EnergyAverage=$(awk '{printf ("%0.2f",$1/1000); }' <<<$(( ${EnergySum} / ${NumberofSamples} )) )
+
+			# check tresholds
+			ReportedStatus="0 OK"
+
+			# check whether averaged tresholds are to be applied
+			if [ "X${AvgWarnTreshold}" != "X" ]; then
+				# multiply by 100 to do integer math when comparing
+				AvgWarnValue=$(( $(tr -d -c '[:digit:]' <<<"${AvgWarnTreshold}") * 100 ))
+				if [ "X${AvgCritTreshold}" != "X" ]; then
+					AvgCritValue=$(( $(tr -d -c '[:digit:]' <<<"${AvgCritTreshold}") * 100 ))
+					# check whether WARN is lower than CRIT
+					if [ ${AvgWarnValue} -gt ${AvgCritValue} ]; then
+						echo -e "<<<<${HostName}>>>>\n<<<mrpe>>>"
+						echo -e "(${0##*/}) ${SensorName} 3 UNKN - averaged WARN treshold higher than averaged CRIT: ${WarnTreshold} vs. ${CritTreshold}"
+						echo "<<<<>>>>"
+						break
+					fi
+				fi
+			fi
+
+			# check tresholds for fluctuating values
+			if [ "X${WarnTreshold}" != "X" ]; then
+				# multiply by 100 to do integer math when comparing
+				WarnValue=$(( $(tr -d -c '[:digit:]' <<<"${WarnTreshold}") * 100 ))
+				ActualValue=$(awk '{printf ("%0.0f",$1*100); }' <<<"${CurrentAverage}")
+				AverageValue=$(awk '{printf ("%0.0f",$1*100); }' <<<"${EnergyAverage}")
+				# if one of both values exceeds the treshold switch status to WARN
+				if [ ${ActualValue} -ge ${WarnValue} -o ${AverageValue} -ge ${AvgWarnValue:-$WarnValue} ]; then
+					ReportedStatus="1 WARN"
+				fi
+				if [ "X${CritTreshold}" != "X" ]; then
+					CritValue=$(( $(tr -d -c '[:digit:]' <<<"${CritTreshold}") * 100 ))
+					# check whether WARN is lower than CRIT
+					if [ ${WarnValue} -gt ${CritValue} ]; then
+						echo -e "<<<<${HostName}>>>>\n<<<mrpe>>>"
+						echo -e "(${0##*/}) ${SensorName} 3 UNKN - WARN treshold higher than CRIT: ${WarnTreshold} vs. ${CritTreshold}"
+						echo "<<<<>>>>"
+						break
+					fi
+					# if one of both values exceeds the treshold switch status to CRIT
+					if [ ${ActualValue} -ge ${CritValue} -o ${AverageValue} -ge ${AvgCritValue:-$CritValue} ]; then
+						ReportedStatus="2 CRIT"
+					fi
+				fi
+			fi
+
+			echo -e "<<<<${HostName}>>>>\n<<<mrpe>>>"
+			if [ ${NumberofSamples} -lt 15 ]; then
+				echo "(${0##*/}) ${SensorName} 3 UNKN - Not enough consumption samples, waiting $(( 15 - ${NumberofSamples} )) minutes"
+			else
+				echo "(${0##*/}) ${SensorName} ${ReportedStatus} - right now: ${CurrentAverage}W, last hour: ${EnergyAverage}W | consumption=${CurrentAverage:-0} avg_consumption=${EnergyAverage:-0}"
+			fi
+			echo "<<<<>>>>"
+		fi
+	done
+done

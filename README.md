@@ -39,6 +39,7 @@ It looks like this with a new M1 MacBook Air having plenty of hardware sensors, 
   * [Expiring Julia Mailoffice certificates](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-julia-certificates.sh)
   * [Invalid logins for Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-invalid-kerio-logins.sh)
   * [Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-kerio)
+  * [Netio switchable powermeters](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/netio)
   * [Outstanding macOS updates with JAMF Pro](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-jss-and-macos-updates)
   * [Reboot needed on Linux?](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-for-reboot.sh)
   * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-filemaker-server.sh)
