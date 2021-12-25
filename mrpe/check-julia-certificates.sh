@@ -141,13 +141,13 @@ ExitCode=$(grep "^ExitCode" "${TmpFile}" | cut -f2 | sort -n | tail -n1)
 
 case ${ExitCode} in
 	0)
-		echo "OK - no certificates to expire soon | expiring_certificates=0 | total_certificates=${CountOfCerts}"
+		echo "OK - no certificates to expire soon | expiring_certificates=0 total_certificates=${CountOfCerts}"
 		;;
 	1)
-		echo "WARN - ${Summary} | expiring_certificates=${CountOfExpiringCerts} | total_certificates=${CountOfCerts}"
+		echo "WARN - ${Summary} | expiring_certificates=${CountOfExpiringCerts} total_certificates=${CountOfCerts}"
 		;;
 	2)
-		echo "CRIT - ${Summary} | expiring_certificates=${CountOfExpiringCerts} | total_certificates=${CountOfCerts}"
+		echo "CRIT - ${Summary} | expiring_certificates=${CountOfExpiringCerts} total_certificates=${CountOfCerts}"
 		;;
 esac
 
