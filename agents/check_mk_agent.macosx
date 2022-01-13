@@ -218,6 +218,7 @@ done
 
 echo '<<<cpu>>>';
 echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Processes/ {print $4"/"$2;}'` `echo 'echo $$' | bash` `sysctl -n hw.ncpu`
+sysctl kern.num_threads | awk '{print $2}'
 
 # compressed memory will be incorrectly reported as swap since this is macOS'
 # first and usual choice if memory pressure increases
