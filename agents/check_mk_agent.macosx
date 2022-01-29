@@ -40,7 +40,7 @@ unset LANG
 export MK_LIBDIR='/usr/local/lib/check_mk_agent'
 export MK_CONFDIR='/etc/check_mk'
 export MK_VARDIR='/var/lib/check_mk_agent'
-export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 # All executables in PLUGINSDIR will simply be executed and their
 # ouput appended to the output of the agent. Plugins define their own
@@ -55,6 +55,9 @@ LOCALDIR=$MK_LIBDIR/local
 # All files in SPOOLDIR will simply appended to the agent
 # output if they are not outdated (see below)
 SPOOLDIR=$MK_VARDIR/spool
+
+# time now
+NOW=$(date +%s)
 
 # close standard input (for security reasons) and stderr when not
 # explicitly in debug mode.
@@ -162,9 +165,17 @@ function run_cached () {
 export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
-Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
-
-printf "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver\n"
+# Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
+# printf "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver\n"
+echo "<<<check_mk>>>"
+echo "Version: 2.0.0p17"
+echo "AgentOS: macosx $osver"
+echo "Hostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')"
+echo "AgentDirectory: $MK_CONFDIR"
+echo "DataDirectory: $MK_VARDIR"
+echo "SpoolDirectory: $SPOOLDIR"
+echo "PluginsDirectory: $PLUGINSDIR"
+echo "LocalDirectory: $LOCALDIR"
 
 echo '<<<df>>>'
 # Check hfs+
@@ -282,7 +293,7 @@ grep -q -i adobe <<<"${RunningApps}" && RAMAdobe=$(( $(grep -i adobe <<<"${Runni
 echo "<<<mrpe>>>"
 echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles:-0} all_apps=${AllApps:-0} adobe_apps=${AdobeApps:-0} adobe_ram=${RAMAdobe:-0} microsoft_apps=${MSApps:-0} microsoft_ram=${RAMMS:-0} safari_ram=${RAMSafari:-0} firefox_ram=${RAMFF:-0} chrome_ram=${RAMChrome:-0}${VMStatGraph}"
 
-printf "<<<uptime>>>\n$(( $(date +%s) - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))\n"
+printf "<<<uptime>>>\n$(( ${NOW} - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))\n"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
 # checks plugins with subchecks for parsing that output. Maybe reduce
 # the output size by grepping away totally useless parts
@@ -348,8 +359,7 @@ netstat -ntfinet | awk ' /^tcp/ { c[$6]++; } END { for (x in c) { print x, c[x];
 
 # Fileinfo-Check: put patterns for files into /etc/check_mk/fileinfo.cfg
 if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
-	echo '<<<fileinfo:sep(124)>>>'
-	date +%s
+	printf "<<<fileinfo:sep(124)>>>\n${NOW}\n"
 
 	OLD_IFS=$IFS
 	IFS='
@@ -357,7 +367,7 @@ if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
 	while read -r pattern; do
 		case $pattern in
 			/*) for file in $pattern; do
-					stat -f "%N|%z|%m" "$file" 2>/dev/null || echo "$file|missing|`date +%s`"
+					stat -f "%N|%z|%m" "$file" 2>/dev/null || echo "$file|missing|${NOW}"
 				done ;;
 		esac
 	done < "$MK_CONFDIR/fileinfo.cfg"
@@ -674,6 +684,55 @@ elif [ ${RestartNeeded} -gt 0 ]; then
 	echo "(${0##*/}) Reboot%20needed ${RebootStatus} - 1 pending security update requires a restart"
 else
 	echo "(${0##*/}) Reboot%20needed 0 OK - no reboot required"
+fi
+
+# hardware/software inventory, will be updated every 4 hours
+INTERVAL=${INVENTORY_INTERVAL:-14400}
+LastInventory=$(find /var/run/de.arts-others.inventory -mtime +$(( $(( INTERVAL / 60 )) - 1 ))m 2>/dev/null)
+if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; then
+	# file doesn't exist or is older than 239 minutes -- let's (re)create it
+	UNTIL=$((NOW + INTERVAL + 600))
+	echo "<<<lnx_packages:sep(124):persist(${UNTIL})>>>" >/var/run/de.arts-others.inventory
+	system_profiler -json SPApplicationsDataType | egrep '^      "_name"|^      "arch_kind"|^      "version"' | sed -e 's/_name/:name/' -e 's/arch_//g' -e 's/i32_i64/x86\/x86_64/' -e 's/arm_i64/arm64/' -e 's/i32/x86/' -e 's/ : / /' -e 's/i64/amd64/' | tr '\n' ' ' | perl -p -e 's/:/\n/g' | awk -F'"' '{print $3"|"$11"|"$7"|app|-||install ok installed"}' | sort | uniq | grep -v '^|' >>/var/run/de.arts-others.inventory
+	if type brew >/dev/null 2>&1 ; then
+		currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
+		if [[ ${currentUser} != "loginwindow" ]]; then
+			su ${currentUser} -c "brew list --versions" | while read ; do
+				echo "$(awk -F" " '{print $1"|"$2}' <<<"${REPLY}")|${Arch}|homebrew|-||install ok installed"
+			done >>/var/run/de.arts-others.inventory
+		fi
+	fi
+	# collect RAM information
+	# RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Bank Locator:/')"
+
+	# collect Mac info
+	SPHardwareDataType="$(system_profiler SPHardwareDataType)"
+	BIOSVersion="$(egrep "OS Loader Version|Boot ROM Version" <<<"${SPHardwareDataType}" | awk -F" " '{print $4}')"
+	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: Apple Inc.\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
+	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
+	
+	SerialNumber="$(awk -F": " '/Serial Number/ {print $2}' <<<"${SPHardwareDataType}")"
+	UUID="$(awk -F": " '/Hardware UUID/ {print $2}' <<<"${SPHardwareDataType}")"
+	Family="$(awk -F": " '/Model Name/ {print $2}' <<<"${SPHardwareDataType}")"
+	printf "\nSystem Information\n:Manufacturer: Apple Inc.\n:Product Name: ${ProductName}" >>/var/run/de.arts-others.inventory
+	printf "\n:Serial Number: ${SerialNumber}\n:UUID: ${UUID}\n:Family: ${Family}" >>/var/run/de.arts-others.inventory
+	CPUName="$(awk -F": " '/Processor Name:/ {print $2}' <<<"${SPHardwareDataType}")"
+	if [ "X${CPUName}" = "X" ]; then
+		# seems no Intel CPU but Apple Silicon instead
+		CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
+		Manufacturer="Apple Inc."
+	else
+		Manufacturer="Intel(R) Corporation"
+	fi
+	printf "\n\nProcessor Information\n:Socket Designation: CPU\n:Type: Central Processor\n:Version: ${CPUName}" >>/var/run/de.arts-others.inventory
+	printf "\n:Manufacturer: ${Manufacturer}\n:Core Count: $(sysctl -n hw.physicalcpu)" >>/var/run/de.arts-others.inventory
+	printf "\n:Core Enabled: $(sysctl -n hw.physicalcpu)\n:Thread Count: $(sysctl -n hw.logicalcpu)" >>/var/run/de.arts-others.inventory
+	
+	# kernel information
+	printf "\n<<<lnx_uname:persist(${UNTIL})>>>\n$(uname -m)\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
+fi
+if [ -f /var/run/de.arts-others.inventory ]; then
+	cat /var/run/de.arts-others.inventory
 fi
 
 ###############################
