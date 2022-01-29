@@ -121,7 +121,7 @@ function run_cached () {
 	# update again.
 	if [ -e "$CACHEFILE.new" ] ; then
 		local CF_ATIME
-		CF_ATIME=$(stat -f %Sa -t %s "$CACHEFILE.new")
+		CF_ATIME=$(stat -f '%a' "$CACHEFILE.new")
 		if [ $((NOW - CF_ATIME)) -ge $((MAXAGE * 2)) ] ; then
 			# Kill the process still accessing that file in case
 			# it is still running. This avoids overlapping processes!
@@ -133,7 +133,7 @@ function run_cached () {
 	# Check if cache file exists and is recent enough
 	if [ -s "$CACHEFILE" ] ; then
 		local MTIME
-		MTIME=$(stat -f %Sm -t %s "$CACHEFILE")
+		MTIME=$(stat -f '%m' "$CACHEFILE")
 		local AGE
 		AGE=$((NOW - MTIME))
 		if [ "$AGE" -le "$MAXAGE" ] ; then local USE_CACHEFILE=1 ; fi
@@ -692,8 +692,10 @@ LastInventory=$(find /var/run/de.arts-others.inventory -mtime +$(( $(( INTERVAL 
 if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; then
 	# file doesn't exist or is older than 239 minutes -- let's (re)create it
 	UNTIL=$((NOW + INTERVAL + 600))
+	Arch=$(uname -m)
 	echo "<<<lnx_packages:sep(124):persist(${UNTIL})>>>" >/var/run/de.arts-others.inventory
-	system_profiler -json SPApplicationsDataType | egrep '^      "_name"|^      "arch_kind"|^      "version"' | sed -e 's/_name/:name/' -e 's/arch_//g' -e 's/i32_i64/x86\/x86_64/' -e 's/arm_i64/arm64/' -e 's/i32/x86/' -e 's/ : / /' -e 's/i64/amd64/' | tr '\n' ' ' | perl -p -e 's/:/\n/g' | awk -F'"' '{print $3"|"$11"|"$7"|app|-||install ok installed"}' | sort | uniq | grep -v '^|' >>/var/run/de.arts-others.inventory
+	# JSON output works only from macOS 10.15 onwoards
+	system_profiler -json SPApplicationsDataType 2>/dev/null | egrep '^      "_name"|^      "arch_kind"|^      "version"' | sed -e 's/_name/:name/' -e 's/arch_//g' -e 's/i32_i64/x86\/x86_64/' -e 's/arm_i64/arm64/' -e 's/i32/x86/' -e 's/ : / /' -e 's/i64/amd64/' | tr '\n' ' ' | perl -p -e 's/:/\n/g' | awk -F'"' '{print $3"|"$11"|"$7"|app|-||install ok installed"}' | sort | uniq | grep -v '^|' >>/var/run/de.arts-others.inventory
 	if type brew >/dev/null 2>&1 ; then
 		currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
 		if [[ ${currentUser} != "loginwindow" ]]; then
@@ -702,34 +704,58 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			done >>/var/run/de.arts-others.inventory
 		fi
 	fi
-	# collect RAM information
+	# TODO: collect RAM information
 	# RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Bank Locator:/')"
 
-	# collect Mac info
+	# collect hardware info
 	SPHardwareDataType="$(system_profiler SPHardwareDataType)"
-	BIOSVersion="$(egrep "OS Loader Version|Boot ROM Version" <<<"${SPHardwareDataType}" | awk -F" " '{print $4}')"
-	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: Apple Inc.\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
-	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
-	
+	BIOSVersion="$(egrep "OS Loader Version|Boot ROM Version|System Firmware Version" <<<"${SPHardwareDataType}" | tail -n1 | awk -F" " '{print $4}')"
 	SerialNumber="$(awk -F": " '/Serial Number/ {print $2}' <<<"${SPHardwareDataType}")"
 	UUID="$(awk -F": " '/Hardware UUID/ {print $2}' <<<"${SPHardwareDataType}")"
-	Family="$(awk -F": " '/Model Name/ {print $2}' <<<"${SPHardwareDataType}")"
-	printf "\nSystem Information\n:Manufacturer: Apple Inc.\n:Product Name: ${ProductName}" >>/var/run/de.arts-others.inventory
+	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
+	case ${BIOSVersion} in
+		VMW*)
+			SysManufacturer="VMWare Inc."
+			Family="Virtual Machine"
+			case ${Arch} in
+				x86_64)
+					CPUName="x86_64 virtualized"
+					CPUManufacturer="Intel(R) Corporation"
+					;;
+				*)
+					CPUName="arm64 virtualized"
+					CPUManufacturer="Apple Inc."
+					;;
+			esac
+			;;
+		VirtualBox*)
+			SysManufacturer="Oracle VirtualBox"
+			Family="Virtual Machine"
+			CPUName="x86_64 virtualized"
+			CPUManufacturer="Intel(R) Corporation"
+			;;
+		*)
+			SysManufacturer="Apple Inc."
+			Family="$(awk -F": " '/Model Name/ {print $2}' <<<"${SPHardwareDataType}")"
+			CPUName="$(awk -F": " '/Processor Name:/ {print $2}' <<<"${SPHardwareDataType}")"
+			if [ "X${CPUName}" = "X" ]; then
+				# seems no Intel CPU but Apple Silicon instead
+				CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
+				CPUManufacturer="Apple Inc."
+			else
+				CPUManufacturer="Intel(R) Corporation"
+			fi
+			;;
+	esac
+	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: ${SysManufacturer}\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
+	printf "\nSystem Information\n:Manufacturer: ${SysManufacturer}\n:Product Name: ${ProductName}" >>/var/run/de.arts-others.inventory
 	printf "\n:Serial Number: ${SerialNumber}\n:UUID: ${UUID}\n:Family: ${Family}" >>/var/run/de.arts-others.inventory
-	CPUName="$(awk -F": " '/Processor Name:/ {print $2}' <<<"${SPHardwareDataType}")"
-	if [ "X${CPUName}" = "X" ]; then
-		# seems no Intel CPU but Apple Silicon instead
-		CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
-		Manufacturer="Apple Inc."
-	else
-		Manufacturer="Intel(R) Corporation"
-	fi
 	printf "\n\nProcessor Information\n:Socket Designation: CPU\n:Type: Central Processor\n:Version: ${CPUName}" >>/var/run/de.arts-others.inventory
-	printf "\n:Manufacturer: ${Manufacturer}\n:Core Count: $(sysctl -n hw.physicalcpu)" >>/var/run/de.arts-others.inventory
+	printf "\n:Manufacturer: ${CPUManufacturer}\n:Core Count: $(sysctl -n hw.physicalcpu)" >>/var/run/de.arts-others.inventory
 	printf "\n:Core Enabled: $(sysctl -n hw.physicalcpu)\n:Thread Count: $(sysctl -n hw.logicalcpu)" >>/var/run/de.arts-others.inventory
 	
 	# kernel information
-	printf "\n<<<lnx_uname:persist(${UNTIL})>>>\n$(uname -m)\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
+	printf "\n<<<lnx_uname:persist(${UNTIL})>>>\n${Arch}\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
 fi
 if [ -f /var/run/de.arts-others.inventory ]; then
 	cat /var/run/de.arts-others.inventory
@@ -923,7 +949,7 @@ then
 
 		# If there is at least one digit, than we honor that.
 		if [ "$maxage" ] ; then
-			mtime=$(stat -f %Sm -t %s "$file")
+			mtime=$(stat -f '%m' "$file")
 			if [ $((now - mtime)) -gt "$maxage" ] ; then
 				continue
 			fi
