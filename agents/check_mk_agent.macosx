@@ -719,6 +719,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	UUID="$(awk -F": " '/Hardware UUID/ {print $2}' <<<"${SPHardwareDataType}")"
 	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
 	cpu_mhz="$(sed 's/,/./' <<<"${SPHardwareDataType}" | awk -F" " '/Processor Speed:/ {print $3*1000}')"
+	iBridgeVersion="$(system_profiler SPiBridgeDataType | awk -F": " '/Firmware Version: / {print $2}')"
 	case ${Arch} in
 		arm64)
 			# get clockspeed of power cores on Apple Silicon
@@ -774,9 +775,27 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			fi
 			;;
 	esac
+	
+	case ${ProductName} in
+		Parallels*)
+			SysManufacturer="Parallels Inc."
+			Family="Virtual Machine"
+			case ${Arch} in
+				x86_64)
+					CPUName="x86_64 virtualized"
+					CPUManufacturer="Intel(R) Corporation"
+					;;
+				*)
+					CPUName="arm64 virtualized"
+					CPUManufacturer="Apple Inc."
+					;;
+			esac
+			;;
+	esac			
 
 	# fake dmidecode output
 	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: ${SysManufacturer}\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
+	[ "X${iBridgeVersion}" = "X" ] || echo ":BIOS Revision: ${iBridgeVersion}" >>/var/run/de.arts-others.inventory
 	printf "\nSystem Information\n:Manufacturer: ${SysManufacturer}\n:Product Name: ${ProductName}" >>/var/run/de.arts-others.inventory
 	printf "\n:Serial Number: ${SerialNumber}\n:UUID: ${UUID}\n:Family: ${Family}" >>/var/run/de.arts-others.inventory
 	printf "\n\nProcessor Information\n:Socket Designation: CPU\n:Type: Central Processor\n:Version: ${CPUName}" >>/var/run/de.arts-others.inventory
@@ -784,18 +803,23 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	printf "\n:Status: Populated, Enabled\n:Core Enabled: ${physicalcpu}\n:Thread Count: ${logicalcpu}\n\n" >>/var/run/de.arts-others.inventory
 
 	# Try to collect RAM information. For whatever reasons only last memory module gets 
-	# picked up by inventory
-	system_profiler SPMemoryDataType | grep -q "ECC: Enabled" && ECCType="Single-bit ECC" || ECCType="None"
-	MemMB=$(awk '{print $1/1048576}' <<<"${MemTotal}")
-	echo "Physical Memory Array
-:Location: Motherboard
-:Use: System Memory
-:Error Correction Type: "${ECCType}"
-:Maximum Capacity: ${MemMB} MB
-:Number Of Devices: 16" >>/var/run/de.arts-others.inventory
-	RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Set: None\\n:Locator:/')"
-	grep -q ':Set:' <<<"${RAMInfo}" || RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:NODE /\\nMemory Device\\n:Set: None\\n:Locator:/')"
-	printf "${RAMInfo}\n" >>/var/run/de.arts-others.inventory
+	# picked up by inventory (Check_MK 2.0.0p17)
+	if [ "X${Family}" != "XVirtual Machine" ]; then
+		# only process memory information on real Macs since with VMs it's pointless.
+		# If Upgradeable Memory is detected skip everything after the 16th slot (VMWare madness):
+		RawMemoryInfo="$(system_profiler SPMemoryDataType | sed '1,/        RAM slot #16/!d' | grep -v 'RAM slot #16')"
+		grep -q '        RAM slot ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:RAM slot/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		grep -q '        NODE ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:NODE/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		grep -q '        BANK ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		if [ "X${RAMInfo}" != "X" ]; then
+			# only proceed if we could really extract information
+			grep -q "ECC: Enabled" <<<"${RawMemoryInfo}" && ECCType="Single-bit ECC" || ECCType="None"
+			MemMB=$(awk '{print $1/1048576}' <<<"${MemTotal}")
+			printf "Physical Memory Array\n:Location: Motherboard\n:Use: System Memory\n" >>/var/run/de.arts-others.inventory
+			printf ":Error Correction Type: ${ECCType}\n:Maximum Capacity: ${MemMB} MB\n" >>/var/run/de.arts-others.inventory
+			printf ":Number Of Devices: 16\n${RAMInfo}\n" >>/var/run/de.arts-others.inventory
+		fi
+	fi
 	
 	# fake /proc/cpuinfo (will not report clusters properly on Apple Silicon but who cares?)
 	printf "\n<<<lnx_cpuinfo:sep(58):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
@@ -877,7 +901,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 
 	# fake Linux block devices
 	printf "<<<lnx_block_devices:sep(0):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
-	for StorageType in NVMe SerialATA SAS ParallelSCSI ; do
+	for StorageType in NVMe SerialATA SAS ParallelSCSI ParallelATA ; do
 		StorageInfo="$(system_profiler SP${StorageType}DataType | egrep "^          Capacity|^          Model|^          Serial Number:|^          Revision:")"
 		Vendor="$(sed -e 's/Parallel//' -e 's/Serial//' <<<"${StorageType}")"
 		Counter=0
