@@ -713,6 +713,27 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	SerialNumber="$(awk -F": " '/Serial Number/ {print $2}' <<<"${SPHardwareDataType}")"
 	UUID="$(awk -F": " '/Hardware UUID/ {print $2}' <<<"${SPHardwareDataType}")"
 	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
+	NumberofProcessors=$(awk -F": " '/Number of Processors/ {print $2}' <<<"${SPHardwareDataType}")
+	cpu_mhz="$(sed 's/,/./' <<<"${SPHardwareDataType}" | awk -F" " '/Processor Speed:/ {print $3*1000}')"
+	case ${Arch} in
+		arm64)
+			# get clockspeed of power cores on Apple Silicon
+			PowerMetrics="$(powermetrics -n1 -s cpu_power)"
+			cpu_mhz=$(grep "active residency" <<<"${PowerMetrics}" | grep CPU | tail -n1 | tr ' ' '\n' | sort -n -r | head -n1)
+			cache_size=$(sysctl -n hw.perflevel0.l2cachesize | awk '{print $1/1024}')
+			;;
+		x86*)
+			# only possible to get base frequency on Intel
+			cpu_mhz=$(sysctl -n hw.cpufrequency | awk '{print $1/1000000}')
+			cache_size=$(sysctl -n hw.l3cachesize | awk '{print $1/1024}')
+			;;
+	esac
+	cpu_brand="$(sysctl -n machdep.cpu.brand_string)"
+	cpu_vendor=$(sysctl -n machdep.cpu.vendor 2>/dev/null)
+	physicalcpu=$(sysctl -n hw.physicalcpu)
+	logicalcpu=$(sysctl -n hw.logicalcpu)
+	core_divider=$(( ${logicalcpu} / ${NumberofProcessors:-1} ))
+
 	case ${BIOSVersion} in
 		VMW*)
 			SysManufacturer="VMWare Inc."
@@ -747,15 +768,32 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			fi
 			;;
 	esac
+
+	# fake dmidecode output
 	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: ${SysManufacturer}\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
 	printf "\nSystem Information\n:Manufacturer: ${SysManufacturer}\n:Product Name: ${ProductName}" >>/var/run/de.arts-others.inventory
 	printf "\n:Serial Number: ${SerialNumber}\n:UUID: ${UUID}\n:Family: ${Family}" >>/var/run/de.arts-others.inventory
 	printf "\n\nProcessor Information\n:Socket Designation: CPU\n:Type: Central Processor\n:Version: ${CPUName}" >>/var/run/de.arts-others.inventory
-	printf "\n:Manufacturer: ${CPUManufacturer}\n:Core Count: $(sysctl -n hw.physicalcpu)" >>/var/run/de.arts-others.inventory
-	printf "\n:Core Enabled: $(sysctl -n hw.physicalcpu)\n:Thread Count: $(sysctl -n hw.logicalcpu)" >>/var/run/de.arts-others.inventory
+	printf "\n:Max Speed: ${cpu_mhz:-0} MHz\n:Manufacturer: ${CPUManufacturer}\n:Core Count: ${physicalcpu}" >>/var/run/de.arts-others.inventory
+	printf "\n:Status: Populated, Enabled\n:Core Enabled: ${physicalcpu}\n:Thread Count: ${logicalcpu}" >>/var/run/de.arts-others.inventory
 	
+	# fake /proc/cpuinfo (will not report clusters properly on Apple Silicon but who cares?)
+	printf "\n<<<lnx_cpuinfo:sep(58):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
+	for processor in $(seq 0 $(( ${logicalcpu} - 1 )) ); do
+		echo "processor:${processor}"
+		echo "vendor_id:${cpu_vendor:-Apple}"
+		echo "model name:${cpu_brand}"
+		echo "cpu MHz:${cpu_mhz}"
+		echo "cache size:${cache_size} KB"
+		echo "physical id:$(( ${processor} / ${core_divider} ))"
+		echo "siblings:$(( ${logicalcpu} / ${NumberofProcessors:-1} ))"
+		echo "core id:$(( ${processor} / $(( ${logicalcpu} / ${physicalcpu} )) ))"
+		echo "cpu cores:$(( ${physicalcpu} / ${NumberofProcessors:-1} ))"
+		echo
+	done >>/var/run/de.arts-others.inventory
+
 	# kernel information
-	printf "\n<<<lnx_uname:persist(${UNTIL})>>>\n${Arch}\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
+	printf "<<<lnx_uname:persist(${UNTIL})>>>\n${Arch}\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
 fi
 if [ -f /var/run/de.arts-others.inventory ]; then
 	cat /var/run/de.arts-others.inventory

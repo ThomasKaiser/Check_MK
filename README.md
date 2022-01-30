@@ -17,6 +17,7 @@ A slightly tweaked macosx agent compared to the official one. As of 1.7.0i1 this
   * reports SMART health data and disk temperatures if `smartctl` is available (`brew install smartmontools`)
   * reports outstanding security updates
   * reports a warning if security updates require a reboot
+  * supports HW/SW inventory (Mac/cpu info, serial numbers, installed apps from 10.15 onwards)
   * bundled with a LaunchDaemon that needs to be loaded as below (if you want more fine grained control who can access the agent's output see [here](https://github.com/ThomasKaiser/Check_MK/issues/1) for example):
 
     `launchctl load -w /Library/LaunchDaemons/de.mathias-kettner.check_mk.plist`
