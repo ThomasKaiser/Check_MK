@@ -711,8 +711,6 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			done >>/var/run/de.arts-others.inventory
 		fi
 	fi
-	# TODO: collect RAM information
-	# RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Bank Locator:/')"
 
 	# collect hardware info
 	SPHardwareDataType="$(system_profiler SPHardwareDataType)"
@@ -745,6 +743,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 		VMW*)
 			SysManufacturer="VMWare Inc."
 			Family="Virtual Machine"
+			ProductName="VMware Virtual Platform"
 			case ${Arch} in
 				x86_64)
 					CPUName="x86_64 virtualized"
@@ -782,7 +781,21 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	printf "\n:Serial Number: ${SerialNumber}\n:UUID: ${UUID}\n:Family: ${Family}" >>/var/run/de.arts-others.inventory
 	printf "\n\nProcessor Information\n:Socket Designation: CPU\n:Type: Central Processor\n:Version: ${CPUName}" >>/var/run/de.arts-others.inventory
 	printf "\n:Max Speed: ${cpu_mhz:-0} MHz\n:Manufacturer: ${CPUManufacturer}\n:Core Count: ${physicalcpu}" >>/var/run/de.arts-others.inventory
-	printf "\n:Status: Populated, Enabled\n:Core Enabled: ${physicalcpu}\n:Thread Count: ${logicalcpu}" >>/var/run/de.arts-others.inventory
+	printf "\n:Status: Populated, Enabled\n:Core Enabled: ${physicalcpu}\n:Thread Count: ${logicalcpu}\n\n" >>/var/run/de.arts-others.inventory
+
+	# Try to collect RAM information. For whatever reasons only last memory module gets 
+	# picked up by inventory
+	system_profiler SPMemoryDataType | grep -q "ECC: Enabled" && ECCType="Single-bit ECC" || ECCType="None"
+	MemMB=$(awk '{print $1/1048576}' <<<"${MemTotal}")
+	echo "Physical Memory Array
+:Location: Motherboard
+:Use: System Memory
+:Error Correction Type: "${ECCType}"
+:Maximum Capacity: ${MemMB} MB
+:Number Of Devices: 16" >>/var/run/de.arts-others.inventory
+	RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+	grep -q ':Set:' <<<"${RAMInfo}" || RAMInfo="$(system_profiler SPMemoryDataType | grep "^        " | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:NODE /\\nMemory Device\\n:Set: None\\n:Locator:/')"
+	printf "${RAMInfo}\n" >>/var/run/de.arts-others.inventory
 	
 	# fake /proc/cpuinfo (will not report clusters properly on Apple Silicon but who cares?)
 	printf "\n<<<lnx_cpuinfo:sep(58):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
@@ -865,15 +878,19 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	# fake Linux block devices
 	printf "<<<lnx_block_devices:sep(0):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
 	for StorageType in NVMe SerialATA SAS ParallelSCSI ; do
-		StorageInfo="$(system_profiler SP${StorageType}DataType | egrep "^          Capacity|^          Model")"
+		StorageInfo="$(system_profiler SP${StorageType}DataType | egrep "^          Capacity|^          Model|^          Serial Number:|^          Revision:")"
 		Vendor="$(sed -e 's/Parallel//' -e 's/Serial//' <<<"${StorageType}")"
 		Counter=0
-		grep -A1 Capacity <<<"${StorageInfo}" | tr '\n' ' ' | tr '-' '\n' | grep Capacity | while read ; do
-			DriveModel="$(awk -F": " '{print $3}' <<<"${REPLY}")"
+		grep -A3 Capacity <<<"${StorageInfo}" | tr '\n' ' ' | tr '-' '\n' | grep Capacity | while read ; do
+			DriveModel="$(awk -F": " '{print $3}' <<<"${REPLY}" | awk -F"Revision" '{print $1}')"
 			DriveCapacity="$(awk -F"(" '{print $2}' <<<"${REPLY}" | cut -f1 -d' ' | tr -d '.' | awk '{print $1/512}')"
+			DriveFirmware="$(awk -F": " '{print $4}' <<<"${REPLY}" | awk -F"Serial" '{print $1}')"
+			DriveSerial="$(awk -F": " '{print $5}' <<<"${REPLY}")"
 			echo "|device|/dummy/$(tr '[:upper:]' '[:lower:]' <<<"${Vendor}")${Counter}|"
 			echo "|size|${DriveCapacity}|"
+			echo "|device/firmware_rev|${DriveFirmware}|"
 			echo "|device/model|${DriveModel}|"
+			echo "|device/serial|${DriveSerial}|"
 			echo "|device/type|0|"
 			echo "|device/vendor|${Vendor}|"
 			Counter=$((Counter+1))
