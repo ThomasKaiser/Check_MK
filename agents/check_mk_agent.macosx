@@ -301,7 +301,7 @@ printf "<<<uptime>>>\n$(( ${NOW} - $(sysctl -n kern.boottime | awk '{print $4}' 
 # macOS version of lnx_if.
 echo '<<<lnx_if>>>'
 # collect only information from active interfaces
-interfaces=$(networksetup -listnetworkserviceorder | tr -d ')' | awk -F": " '/Hardware Port/ {print $3}' | sort | while read ; do ifconfig ${REPLY} >/dev/null 2>&1 && echo ${REPLY}; done)
+interfaces=$(scutil --nwi | awk -F" " '/ : flags  / {print $1}' | sort | uniq | while read ; do ifconfig ${REPLY} >/dev/null 2>&1 && echo ${REPLY}; done)
 counter=0
 echo "[start_iplink]"
 while read -r eth; do
@@ -327,7 +327,14 @@ for eth in $interfaces; do
 		speed=$(grep -E "^\s*(down)?link rate:\s*" <<<"$cur_ifconfig" | cut -d " " -f3,4 | sed -E 's, (.)bps$,\1b/s,')
 	fi
 	addr=$(grep -E '^\s*ether' <<<"$cur_ifconfig" | cut -d " " -f2)
-	link_detected=no
+	case $eth in
+		utun*)
+			link_detected=yes
+			;;
+		*)
+			link_detected=no
+			;;
+	esac
 	if grep -E 'status:\s*active' <<<"$cur_ifconfig" > /dev/null || [ "$eth" = "lo0" ]; then
 		link_detected=yes
 	fi
@@ -713,7 +720,6 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	SerialNumber="$(awk -F": " '/Serial Number/ {print $2}' <<<"${SPHardwareDataType}")"
 	UUID="$(awk -F": " '/Hardware UUID/ {print $2}' <<<"${SPHardwareDataType}")"
 	ProductName="$(awk -F": " '/Model Identifier/ {print $2}' <<<"${SPHardwareDataType}")"
-	NumberofProcessors=$(awk -F": " '/Number of Processors/ {print $2}' <<<"${SPHardwareDataType}")
 	cpu_mhz="$(sed 's/,/./' <<<"${SPHardwareDataType}" | awk -F" " '/Processor Speed:/ {print $3*1000}')"
 	case ${Arch} in
 		arm64)
@@ -732,6 +738,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	cpu_vendor=$(sysctl -n machdep.cpu.vendor 2>/dev/null)
 	physicalcpu=$(sysctl -n hw.physicalcpu)
 	logicalcpu=$(sysctl -n hw.logicalcpu)
+	NumberofProcessors=$(sysctl -n hw.packages)
 	core_divider=$(( ${logicalcpu} / ${NumberofProcessors:-1} ))
 
 	case ${BIOSVersion} in
@@ -794,6 +801,122 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 
 	# kernel information
 	printf "<<<lnx_uname:persist(${UNTIL})>>>\n${Arch}\n$(uname -r)\n" >>/var/run/de.arts-others.inventory
+
+	# fake /etc/lsb-release
+	case ${osver} in
+		10.0.*)
+			CodeName="Cheetah"
+			;;
+		10.1.*)
+			CodeName="Puma"
+			;;
+		10.2.*)
+			CodeName="Jaguar"
+			;;
+		10.3.*)
+			CodeName="Panther"
+			;;
+		10.4.*)
+			CodeName="Tiger"
+			;;
+		10.5.*)
+			CodeName="Leopard"
+			;;
+		10.6.*)
+			CodeName="Snow Leopard"
+			;;
+		10.7.*)
+			CodeName="Lion"
+			;;
+		10.8.*)
+			CodeName="Mountain Lion"
+			;;
+		10.9.*)
+			CodeName="Mavericks"
+			;;
+		10.10.*)
+			CodeName="Yosemite"
+			;;
+		10.11.*)
+			CodeName="El Capitan"
+			;;
+		10.12.*)
+			CodeName="Sierra"
+			;;
+		10.13.*)
+			CodeName="High Sierra"
+			;;
+		10.14.*)
+			CodeName="Mojave"
+			;;
+		10.15.*)
+			CodeName="Catalina"
+			;;
+		10.16.*|11.*)
+			CodeName="Big Sur"
+			;;
+		12.*)
+			CodeName="Monterey"
+			;;
+	esac
+	printf "<<<lnx_distro:sep(124):persist(${UNTIL})>>>\n[[[/etc/lsb-release]]]\n" >>/var/run/de.arts-others.inventory
+	printf "DISTRIB_ID=macOS|DISTRIB_RELEASE=$(cut -f1 -d' ' <<<"${osver}")|DISTRIB_CODENAME=${CodeName}|DISTRIB_DESCRIPTION=\"macOS ${osver}\"\n" >>/var/run/de.arts-others.inventory
+
+	# fake Linux block devices
+	printf "<<<lnx_block_devices:sep(0):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
+	for StorageType in NVMe SerialATA SAS ParallelSCSI ; do
+		StorageInfo="$(system_profiler SP${StorageType}DataType | egrep "^          Capacity|^          Model")"
+		Vendor="$(sed -e 's/Parallel//' -e 's/Serial//' <<<"${StorageType}")"
+		Counter=0
+		grep -A1 Capacity <<<"${StorageInfo}" | tr '\n' ' ' | tr '-' '\n' | grep Capacity | while read ; do
+			DriveModel="$(awk -F": " '{print $3}' <<<"${REPLY}")"
+			DriveCapacity="$(awk -F"(" '{print $2}' <<<"${REPLY}" | cut -f1 -d' ' | tr -d '.' | awk '{print $1/512}')"
+			echo "|device|/dummy/$(tr '[:upper:]' '[:lower:]' <<<"${Vendor}")${Counter}|"
+			echo "|size|${DriveCapacity}|"
+			echo "|device/model|${DriveModel}|"
+			echo "|device/type|0|"
+			echo "|device/vendor|${Vendor}|"
+			Counter=$((Counter+1))
+		done
+	done >>/var/run/de.arts-others.inventory
+
+	# fake 'ip r' output
+	printf "<<<lnx_ip_r:persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
+	netstat -rn | grep -q '  Refs  '
+	case $? in
+		0)
+			# macOS 10.14 or below
+			netstat -rn | grep default | egrep -v 'link#|fe80' | awk -F" " '{print $1" via "$2" dev "$6" proto static"}' >>/var/run/de.arts-others.inventory
+			netstat -rn | egrep -v "^Routing|^Destination|default|:|127.0.0.1|lo0|link" | awk -F" " '{print $1" dev "$6" proto kernel scope link src "}' | grep -v '^ dev' >>/var/run/de.arts-others.inventory
+			;;
+		*)
+			# macOs 10.15 or above
+			netstat -rn | grep default | egrep -v 'link#|fe80' | awk -F" " '{print $1" via "$2" dev "$4" proto static"}' >>/var/run/de.arts-others.inventory
+			netstat -rn | egrep -v "^Routing|^Destination|default|:|127.0.0.1|lo0|link" | awk -F" " '{print $1" dev "$4" proto kernel scope link src "}' | grep -v '^ dev' >>/var/run/de.arts-others.inventory
+			;;
+	esac
+
+	# fake lspci output for graphics card listing
+	GPUData="$(system_profiler SPDisplaysDataType | egrep "^      Chipset Model|^      Vendor|^      Device ID|^      Revision ID|^      Metal|Total Number of Cores")"
+	if [ "X${GPUData}" != "X" ]; then
+		ChipsetModel="$(awk -F": " '/Chipset Model:/ {print $2}' <<<"${GPUData}" | tail -n1)"
+		GPUCores="$(awk -F": " '/Total Number of Cores:/ {print $2}' <<<"${GPUData}" | tail -n1)"
+		[ "X${GPUCores}" = "X" ] || ChipsetModel="${ChipsetModel} (${GPUCores} cores)"
+		GPUVendor="$(awk -F": " '/Vendor:/ {print $2}' <<<"${GPUData}" | tail -n1)"
+		GPUDeviceID="$(awk -F": " '/Device ID:/ {print $2}' <<<"${GPUData}" | tail -n1)"
+		GPURevisionID="$(awk -F": " '/Revision ID:/ {print $2}' <<<"${GPUData}" | tail -n1)"
+		if [ "X${GPUDeviceID}" = "X" ]; then
+			GPUID=""
+		else
+			GPUID=" (${GPUDeviceID}/${GPURevisionID})"
+		fi
+		GPUMetalCapabilities="$(awk -F", " '/Metal/ {print $2}' <<<"${GPUData}" | tail -n1 | sed 's/feature set//')"
+		printf "<<<lnx_video:sep(58):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
+		echo "03:00.0 VGA compatible controller: ${ChipsetModel:-VGA emulation}
+	Subsystem: ${GPUVendor:-VGA emulation}${GPUID}
+	Kernel driver in use: ${GPUMetalCapabilities:-no metal support}
+	Kernel modules: ${GPUMetalCapabilities:-no metal support}" >>/var/run/de.arts-others.inventory
+	fi
 fi
 if [ -f /var/run/de.arts-others.inventory ]; then
 	cat /var/run/de.arts-others.inventory
