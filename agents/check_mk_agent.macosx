@@ -168,7 +168,7 @@ osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
 # Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
 # printf "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver\n"
 echo "<<<check_mk>>>"
-echo "Version: 2.0.0p17"
+echo "Version: 2.0.0p19"
 echo "AgentOS: macosx $osver"
 echo "Hostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')"
 echo "AgentDirectory: $MK_CONFDIR"
@@ -701,12 +701,15 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	UNTIL=$((NOW + INTERVAL + 600))
 	Arch=$(uname -m)
 	echo "<<<lnx_packages:sep(124):persist(${UNTIL})>>>" >/var/run/de.arts-others.inventory
-	# JSON output works only from macOS 10.15 onwoards
+	# JSON output works only from macOS 10.15 onwoards, so no apps listing with 10.14 or below.
 	system_profiler -json SPApplicationsDataType 2>/dev/null | egrep '^      "_name"|^      "arch_kind"|^      "version"' | sed -e 's/_name/:name/' -e 's/arch_//g' -e 's/i32_i64/x86\/x86_64/' -e 's/arm_i64/arm64\/x86_64/' -e 's/i32/x86/' -e 's/ : / /' -e 's/i64/amd64/' | tr '\n' ' ' | perl -p -e 's/:/\n/g' | awk -F'"' '{print $3"|"$11"|"$7"|app|-||install ok installed"}' | sort | uniq | grep -v '^|' >>/var/run/de.arts-others.inventory
 	if type brew >/dev/null 2>&1 ; then
-		currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
-		if [[ ${currentUser} != "loginwindow" ]]; then
-			su ${currentUser} -c "brew list --versions" | while read ; do
+		# drop privileges to user != root for security reasons (brew refusing to run as
+		# root for a reason). First try currently logged in user, then last console user
+		normalUser=$(scutil <<<'show State:/Users/ConsoleUser' | awk '/Name :/ && ! /loginwindow/ { print $3 }')
+		[[ "X${normalUser}" = "X" ]] && normalUser=$(last | awk -F" " '/ console / {print $1}' | egrep -v 'root|_mbsetupuser' | head -n1)
+		if [[ "X${normalUser}" != "X" ]]; then 
+			su ${normalUser} -c "brew list --versions" | while read ; do
 				echo "$(awk -F" " '{print $1"|"$2}' <<<"${REPLY}")|${Arch}|homebrew|-||install ok installed"
 			done >>/var/run/de.arts-others.inventory
 		fi
@@ -726,11 +729,15 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			PowerMetrics="$(powermetrics -n1 -s cpu_power)"
 			cpu_mhz=$(grep "active residency" <<<"${PowerMetrics}" | grep -i CPU | tail -n1 | tr ' ' '\n' | sort -n -r | head -n1)
 			cache_size=$(sysctl -n hw.perflevel0.l2cachesize || sysctl -n hw.l2cachesize | awk '{print $1/1024}')
+			CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
+			CPUManufacturer="Apple Inc."
 			;;
 		x86*)
 			# only possible to get base frequency on Intel
 			cpu_mhz=$(sysctl -n hw.cpufrequency | awk '{print $1/1000000}')
 			cache_size=$(sysctl -n hw.l3cachesize | awk '{print $1/1024}')
+			CPUName="$(awk -F": " '/Processor Name:/ {print $2}' <<<"${SPHardwareDataType}")"
+			CPUManufacturer="Intel(R) Corporation"
 			;;
 	esac
 	cpu_brand="$(sysctl -n machdep.cpu.brand_string)"
@@ -744,6 +751,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 		VMW*)
 			SysManufacturer="VMWare Inc."
 			Family="Virtual Machine"
+			# consolidate next entry with mk_inventory output on Linux
 			ProductName="VMware Virtual Platform"
 			case ${Arch} in
 				x86_64)
@@ -763,16 +771,21 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			CPUManufacturer="Intel(R) Corporation"
 			;;
 		*)
-			SysManufacturer="Apple Inc."
-			Family="$(awk -F": " '/Model Name/ {print $2}' <<<"${SPHardwareDataType}")"
-			CPUName="$(awk -F": " '/Processor Name:/ {print $2}' <<<"${SPHardwareDataType}")"
-			if [ "X${CPUName}" = "X" ]; then
-				# seems no Intel CPU but Apple Silicon instead
-				CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
-				CPUManufacturer="Apple Inc."
-			else
-				CPUManufacturer="Intel(R) Corporation"
-			fi
+			case ${CPUName} in
+				Unknown)
+					# Proxmox/KVM or Hackintosh with unknown CPU model, Check_MK users
+					# most probably use the former so report this instead of 'Hackintosh'
+					SysManufacturer="Proxmox/KVM"
+					Family="Virtual Machine"
+					CPUName="x86_64 virtualized"
+					CPUManufacturer="Intel(R) Corporation"
+					;;
+				*)
+					# maybe real Apple hardware
+					SysManufacturer="Apple Inc."
+					Family="$(awk -F": " '/Model Name/ {print $2}' <<<"${SPHardwareDataType}")"
+					;;
+			esac
 			;;
 	esac
 	
@@ -808,9 +821,9 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 		# only process memory information on real Macs since with VMs it's pointless.
 		# If Upgradeable Memory is detected skip everything after the 16th slot (VMWare madness):
 		RawMemoryInfo="$(system_profiler SPMemoryDataType | sed '1,/        RAM slot #16/!d' | grep -v 'RAM slot #16')"
-		grep -q '        RAM slot ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:RAM slot/\\nMemory Device\\n:Set: None\\n:Locator:/')"
-		grep -q '        NODE ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:NODE/\\nMemory Device\\n:Set: None\\n:Locator:/')"
-		grep -q '        BANK ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		grep -q '        RAM slot ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/Size: Empty/Size: No Module Installed/' -e 's/Empty/Unknown/' -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:RAM slot/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		grep -q '        NODE ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/Size: Empty/Size: No Module Installed/' -e 's/Empty/Unknown/' -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:NODE/\\nMemory Device\\n:Set: None\\n:Locator:/')"
+		grep -q '        BANK ' <<<"${RawMemoryInfo}" && RAMInfo="$(grep "^        " <<<"${RawMemoryInfo}" | sed -e 's/Size: Empty/Size: No Module Installed/' -e 's/Empty/Unknown/' -e 's/^[ ]*/:/g' -e 's/MHz/MT\/s/' -e 's/:$//' -e 's/^:BANK/\\nMemory Device\\n:Set: None\\n:Locator:/')"
 		if [ "X${RAMInfo}" != "X" ]; then
 			# only proceed if we could really extract information
 			grep -q "ECC: Enabled" <<<"${RawMemoryInfo}" && ECCType="Single-bit ECC" || ECCType="None"
