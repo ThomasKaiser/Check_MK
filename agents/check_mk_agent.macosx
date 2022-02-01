@@ -232,21 +232,24 @@ echo '<<<cpu>>>';
 echo `sysctl -n vm.loadavg | tr -d '{}'` `nice -n20 top -l 1 -n 1 | awk '/^Processes/ {print $4"/"$2;}'` `echo 'echo $$' | bash` `sysctl -n hw.ncpu`
 sysctl kern.num_threads | awk '{print $2}'
 
-# compressed memory will be incorrectly reported as swap since this is macOS'
-# first and usual choice if memory pressure increases
+# report static swap size as three times the RAM (otherwise HW inventory will report changes
+# every 4 hours)  and swap utilisation as disk space occupied by /var/vm/swapfile*
 echo '<<<statgrab_mem>>>'
-pagesize=$(vm_stat | grep Mach | awk '{print $8}')
-compressedpages=$(vm_stat | awk '/stored in compressor:/ {print $5}' | sed 's/\.$//')
+VMStatOutput="$(vm_stat | sed 's/\.$//')"
+pagesize=$(awk '/Mach/ {print $8}' <<<"${VMStatOutput}")
+# compressedpages=$(awk '/stored in compressor:/ {print $5}' <<<"${VMStatOutput}")
+# occupiedpages=$(awk '/occupied by compressor:/ {print $5}' <<<"${VMStatOutput}")
 MemTotal=$(sysctl -n hw.memsize)
-MemFree=$(echo "( $(vm_stat | grep speculative: | awk '{print $3}') + $(vm_stat | grep inactive: | awk '{print $3}') + $(vm_stat | grep free: | awk '{print $3}') ) * $pagesize" | bc)
-SwapFree=$(( $(echo "( $compressedpages - $(vm_stat | grep "occupied by compressor:" | awk '{print $5}') ) * $pagesize" | bc) - ${MemTotal} ))
+SwapTotal=$(( ${MemTotal} * 3 ))
+MemFree=$(( $(( $(awk '/speculative:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/inactive:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/free:/ {print $3}' <<<"${VMStatOutput}") )) * $pagesize ))
+SwapUsed=$(( $(du -sk /var/vm/swapfile* | awk '{sum+=$1;} END{print sum;}') * 1024 ))
 echo "mem.cache 0"
 echo "mem.free ${MemFree}"
 echo "mem.total ${MemTotal}"
 echo "mem.used $(( ${MemTotal} - ${MemFree} ))"
-echo "swap.free ${SwapFree}"
-echo "swap.total ${MemTotal}"
-echo "swap.used $(( ${MemTotal} - ${SwapFree} ))"
+echo "swap.free $(( ${SwapTotal} - ${SwapUsed} ))"
+echo "swap.total ${SwapTotal}"
+echo "swap.used ${SwapUsed}"
 # FIXME: Just call vm_stat here, write a check plugin that uses that
 # native output of vm_stat
 
@@ -255,7 +258,7 @@ echo "swap.used $(( ${MemTotal} - ${SwapFree} ))"
 # https://github.com/ThomasKaiser/Knowledge/blob/master/articles/Exploring_Apple_Silicon_on_MacBookAir10.md#testing-different-hardware-configurations-on-the-same-machine
 Parse_Full_VM_Stat_Output() {
 	# this will result in 24 graphs for this sensor
-	vm_stat | grep -v Mach | sed -e 's/\.$//' -e 's/"//g' | while read ; do
+	grep -v Mach <<<"${VMStatOutput}" | sed 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
 		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
 		printf " ${Attribute}=${Value}"
@@ -264,7 +267,7 @@ Parse_Full_VM_Stat_Output() {
 ParseVM_Stat_Output() {
 	# this will limit the count of graphs to the reasonable ones to understand 
 	# 'Is the machine's memory too low?'
-	vm_stat | egrep "free|zero|ompre|ins:|outs:" | sed -e 's/\.$//' -e 's/"//g' | while read ; do
+	egrep "free|zero|ompre|ins:|outs:" <<<"${VMStatOutput}" | sed 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
 		Value=$(( $(awk -F":" '{print $2}' <<<"${REPLY}") / ${ScaleFactor} ))
 		printf " ${Attribute}=${Value}"
@@ -276,7 +279,7 @@ VMStatGraph=$(ParseVM_Stat_Output)
 CountOfSwapFiles=$(ls /var/vm/swapfile* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
 VMStatus="${CountOfSwapFiles} swapfile(s)"
 if [ ${CountOfSwapFiles} -gt 1 ]; then
-	CheckStatus="2 CRIT"
+	CheckStatus="1 WARN"
 else
 	CheckStatus="0 OK"
 fi
