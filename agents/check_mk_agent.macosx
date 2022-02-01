@@ -384,7 +384,7 @@ fi
 # Doesn't work since 10.14 due to missing permissions for tmutil
 case $osver in
 	10.?.*|10.1[0-3].*)
-		if type tmutil >/dev/null 2>&1
+		if command -v tmutil >/dev/null 2>&1
 		then
 			echo '<<<timemachine>>>'
 			tmutil latestbackup 2>&1
@@ -426,7 +426,7 @@ fi
 # https://github.com/lavoiesl/osx-cpu-temp (really only needed on Intel Macs where
 # powermetrics does not output SMC sensor data)
 
-if type powermetrics >/dev/null 2>&1
+if command -v powermetrics >/dev/null 2>&1
 then
 	PowerMetrics=$(powermetrics -n 1 -i 1 --samplers smc 2>/dev/null | sed -e 's/: /=/g' -e 's/\ C$//' -e 's/\ rpm$//' -e 's/(//g' -e 's/)//g' -e 's/\ /_/g' | tr '[:upper:]' '[:lower:]' | egrep "die_temp|^fan|thermal_level")
 	# for example: cpu_thermal_level=65 gpu_thermal_level=40 io_thermal_level=0 fan=1822.1 cpu_die_temperature=68.64 gpu_die_temperature=55.00
@@ -453,7 +453,8 @@ then
 		fan_rpm=$(cut -f1 -d_ <<<${fan})
 		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan_rpm} fan rotations per minute | fan_rpm=${fan_rpm:-0}"
 	fi
-	# check for thermal level sensors
+	# check for thermal level sensors / thermal pressure
+	ThermalPressure="$(powermetrics -n 1 -i 1 --samplers thermal 2>/dev/null | awk -F": " '/Current pressure level/ {print $2}')"
 	if [ "X${cpu_thermal_level}" != "X" ]; then
 		if [ ${cpu_thermal_level} -ge 80 -o ${gpu_thermal_level:-0} -ge 80 -o ${io_thermal_level:-0} -ge 80 ]; then
 			ThermalStatus="2 CRIT"
@@ -486,6 +487,20 @@ then
 		esac
 		echo "<<<mrpe>>>"
 		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - CPU: ${cpu_thermal_level}, GPU: ${gpu_thermal_level}, I/O: ${io_thermal_level} ${DisplayStatus} | cpu_thermal_level=${cpu_thermal_level:-0} gpu_thermal_level=${gpu_thermal_level:-0} io_thermal_level=${io_thermal_level:-0} displays=${CountOfDisplays:-0}"
+	elif [ "X${ThermalPressure}" != "X" ]; then
+		case ${ThermalPressure} in
+			Nominal|nominal)
+				ThermalStatus="0 OK"
+				;;
+			Moderate|moderate)
+				ThermalStatus="1 WARN"
+				;;
+			*)
+				ThermalStatus="2 CRIT"
+				;;
+		esac
+		echo "<<<mrpe>>>"
+		echo "(${0##*/}) Thermal%20Status ${ThermalStatus} - ${ThermalPressure}"
 	fi
 fi
 
@@ -533,7 +548,7 @@ if [ "X${iStatisticaSensorsRunning}" != "X" ]; then
 fi
 
 # Check SMART if smartmontools are installed, for NVME Check_MK 1.6 or above is needed
-if type smartctl >/dev/null 2>&1
+if command -v smartctl >/dev/null 2>&1
 then
 	echo '<<<smart>>>'
 	diskutil list | grep -v 'virtual)' | awk -F" " '/(internal)/ {print $1}' | while read ; do
@@ -703,7 +718,9 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	echo "<<<lnx_packages:sep(124):persist(${UNTIL})>>>" >/var/run/de.arts-others.inventory
 	# JSON output works only from macOS 10.15 onwoards, so no apps listing with 10.14 or below.
 	system_profiler -json SPApplicationsDataType 2>/dev/null | egrep '^      "_name"|^      "arch_kind"|^      "version"' | sed -e 's/_name/:name/' -e 's/arch_//g' -e 's/i32_i64/x86\/x86_64/' -e 's/arm_i64/arm64\/x86_64/' -e 's/i32/x86/' -e 's/ : / /' -e 's/i64/amd64/' | tr '\n' ' ' | perl -p -e 's/:/\n/g' | awk -F'"' '{print $3"|"$11"|"$7"|app|-||install ok installed"}' | sort | uniq | grep -v '^|' >>/var/run/de.arts-others.inventory
-	if type brew >/dev/null 2>&1 ; then
+
+	# homebrew packages
+	if command -v brew >/dev/null 2>&1 ; then
 		# drop privileges to user != root for security reasons (brew refusing to run as
 		# root for a reason). First try currently logged in user, then last console user
 		normalUser=$(scutil <<<'show State:/Users/ConsoleUser' | awk '/Name :/ && ! /loginwindow/ { print $3 }')
@@ -713,6 +730,25 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 				echo "$(awk -F" " '{print $1"|"$2}' <<<"${REPLY}")|${Arch}|homebrew|-||install ok installed"
 			done >>/var/run/de.arts-others.inventory
 		fi
+	fi
+
+	# Installamator, jamf cli, smartctl
+	InstallamatorPath="$(command -v Installomator.sh 2>/dev/null)"
+	if [ -x "${InstallamatorPath}" ]; then
+		echo "Installamator|$(awk -F"=" '/^VERSION/ {print $2}' "${InstallamatorPath}" | tr '\n' '/' | sed -e 's|-|/|g' -e 's|/$||' | tr -d '"')|all|app|-||install ok installed" >>/var/run/de.arts-others.inventory
+	fi
+	JAMFPath="$(command -v jamf 2>/dev/null)"
+	if [ -x "${JAMFPath}" ]; then
+		JAMFArch="$(file "${JAMFPath}" | grep -v '\[' | awk -F'executable ' '{print $2}' | sort -n | tr '\n' '/' | sed -e 's|/$||' -e 's/arm64e/arm64/')"
+		JAMFVersion="$("${JAMFPath}" version | awk -F"=" '{print $2}')"
+		echo "Jamf CLI|${JAMFVersion}|${JAMFArch}|app|-||install ok installed" >>/var/run/de.arts-others.inventory
+	fi
+	smartctlPath="$(command -v smartctl 2>/dev/null)"
+	if [ -x "${smartctlPath}" -a ! -L "${smartctlPath}" ]; then
+		# report it only if it's not installed as part of homebrew
+		smartctlArch="$(file "${smartctlPath}" | grep -v '\[' | awk -F'executable ' '{print $2}' | sort -n | tr '\n' '/' | sed -e 's|/$||' -e 's/arm64e/arm64/')"
+		smartctlVersion="$("${smartctlPath}" -h | head -n5 | awk -F" " '/^smartctl/ {print $2" "$4" "$3}' | sed -e 's|-|/|g' -e 's|/$||')"
+		echo "Smartmontools|${smartctlVersion}|${smartctlArch}|app|-||install ok installed" >>/var/run/de.arts-others.inventory
 	fi
 
 	# collect hardware info
@@ -728,7 +764,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			# get clockspeed of power cores on Apple Silicon
 			PowerMetrics="$(powermetrics -n1 -s cpu_power)"
 			cpu_mhz=$(grep "active residency" <<<"${PowerMetrics}" | grep -i CPU | tail -n1 | tr ' ' '\n' | sort -n -r | head -n1)
-			cache_size=$(sysctl -n hw.perflevel0.l2cachesize || sysctl -n hw.l2cachesize | awk '{print $1/1024}')
+			cache_size=$(sysctl -n hw.perflevel0.l2cachesize 2>/dev/null || sysctl -n hw.l2cachesize 2>/dev/null | awk '{print $1/1024}')
 			CPUName="$(awk -F": " '/Chip:/ {print $2}' <<<"${SPHardwareDataType}")"
 			CPUManufacturer="Apple Inc."
 			;;

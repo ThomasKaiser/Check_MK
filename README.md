@@ -30,8 +30,13 @@ It looks like this with a new M1 MacBook Air having plenty of hardware sensors, 
 
 ![](screenshots/thermal-sensors-macbook-air-m1.png)
 
+The fully searchable HW/SW inventory looks like this on a MacBook Pro:
+
+![](screenshots/hw_sw_inventory_macbook.png)
+
 ## Agent plugins
 
+  * [23M (colocation) downtime/maintainance](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/23media-status)
   * [Active users of Helios EtherShare/PCShare, Samba, Netatalk, macOS server, Filemaker](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/logins)
   * [Borgbackup](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-borgbackup.sh)
   * [Canonical Livepatch](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-canonical-livepatch.sh)
@@ -41,6 +46,7 @@ It looks like this with a new M1 MacBook Air having plenty of hardware sensors, 
   * [Invalid logins for Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-invalid-kerio-logins.sh)
   * [Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-kerio)
   * [Netio switchable powermeters](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/netio)
+  * [NFON services downtime/maintainance](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/nfon-status)
   * [Outstanding macOS updates with JAMF Pro](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-jss-and-macos-updates)
   * [Reboot needed on Linux?](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-for-reboot.sh)
   * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-filemaker-server.sh)
