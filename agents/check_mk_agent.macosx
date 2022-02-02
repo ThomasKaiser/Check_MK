@@ -242,14 +242,25 @@ pagesize=$(awk '/Mach/ {print $8}' <<<"${VMStatOutput}")
 MemTotal=$(sysctl -n hw.memsize)
 SwapTotal=$(( ${MemTotal} * 3 ))
 MemFree=$(( $(( $(awk '/speculative:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/inactive:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/free:/ {print $3}' <<<"${VMStatOutput}") )) * $pagesize ))
-SwapUsed=$(( $(du -sk /var/vm/swapfile* | awk '{sum+=$1;} END{print sum;}') * 1024 ))
+SwapSize="$(sysctl -n vm.swapusage | sed 's/,/./g' | awk -F"used = " '{print $2}' | cut -f1 -d' ')"
+case ${SwapSize} in
+	*K)
+		SwapUsed=$(sed 's/K//' <<< "${SwapSize}" | awk '{print $1*1024}')
+		;;
+	*M)
+		SwapUsed=$(sed 's/M//' <<< "${SwapSize}" | awk '{print $1*1048576}')
+		;;
+	*G)
+		SwapUsed=$(sed 's/G//' <<< "${SwapSize}" | awk '{print $1*1073741824}')
+		;;
+esac
 echo "mem.cache 0"
 echo "mem.free ${MemFree}"
 echo "mem.total ${MemTotal}"
 echo "mem.used $(( ${MemTotal} - ${MemFree} ))"
-echo "swap.free $(( ${SwapTotal} - ${SwapUsed} ))"
+echo "swap.free $(( ${SwapTotal} - ${SwapUsed:-0} ))"
 echo "swap.total ${SwapTotal}"
-echo "swap.used ${SwapUsed}"
+echo "swap.used ${SwapUsed:-0}"
 # FIXME: Just call vm_stat here, write a check plugin that uses that
 # native output of vm_stat
 
@@ -276,9 +287,13 @@ ParseVM_Stat_Output() {
 # report values in MB instead of pages (pagesize might change between OS releases)
 ScaleFactor=$(( 1048576 / ${pagesize} ))
 VMStatGraph=$(ParseVM_Stat_Output)
-CountOfSwapFiles=$(ls /var/vm/swapfile* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
+SwapfilePrefix="$(sysctl -n vm.swapfileprefix)"
+CountOfSwapFiles=$(ls "${SwapfilePrefix}"* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
 VMStatus="${CountOfSwapFiles} swapfile(s)"
-if [ ${CountOfSwapFiles} -gt 1 ]; then
+MemoryPressure=$(sysctl -n vm.memory_pressure)
+if [ ${MemoryPressure:-0} -gt 0 ]; then
+	# not precise at all since the memory pressure graph takes many other values into account:
+	# http://newosxbook.com/articles/MemoryPressure.html https://apple.stackexchange.com/q/170227
 	CheckStatus="1 WARN"
 else
 	CheckStatus="0 OK"
@@ -294,7 +309,7 @@ grep -q -i microsoft <<<"${RunningApps}" && RAMMS=$(( $(grep -i microsoft <<<"${
 grep -q -i adobe <<<"${RunningApps}" && RAMAdobe=$(( $(grep -i adobe <<<"${RunningApps}" | awk -F" " '{sum+=$6;} END{print sum;}') / 1024 ))
 
 echo "<<<mrpe>>>"
-echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | swapfiles=${CountOfSwapFiles:-0} all_apps=${AllApps:-0} adobe_apps=${AdobeApps:-0} adobe_ram=${RAMAdobe:-0} microsoft_apps=${MSApps:-0} microsoft_ram=${RAMMS:-0} safari_ram=${RAMSafari:-0} firefox_ram=${RAMFF:-0} chrome_ram=${RAMChrome:-0}${VMStatGraph}"
+echo "(${0##*/}) Swap%20and%20Paging ${CheckStatus} - ${VMStatus} | memory_pressure=${MemoryPressure:-0} swapfiles=${CountOfSwapFiles:-0} all_apps=${AllApps:-0} adobe_apps=${AdobeApps:-0} adobe_ram=${RAMAdobe:-0} microsoft_apps=${MSApps:-0} microsoft_ram=${RAMMS:-0} safari_ram=${RAMSafari:-0} firefox_ram=${RAMFF:-0} chrome_ram=${RAMChrome:-0}${VMStatGraph}"
 
 printf "<<<uptime>>>\n$(( ${NOW} - $(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//') ))\n"
 # FIXME: use sysctl -a for outputting *all* kernel values. Write
