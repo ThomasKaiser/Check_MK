@@ -198,9 +198,9 @@ df -kPT hfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volum
 done
 # Check apfs. We can neither trust in "KB available" provided by df command (shared amongst all
 # containers) nor in "KB used" so we have to query 'diskutil apfs' or use capacity as fallback
-diskutil apfs list | grep -A3 'APFS Volume Disk' | egrep " disk|Capacity Consumed" | \
+APFSContainer="$(diskutil apfs list | grep -A3 'APFS Volume Disk' | egrep " disk|Capacity Consumed" | \
 	awk -F": " '{print $2}' | awk -F" " '{print $1}' | sed 's/disk/-disk/' | tr '\n' ' ' | \
-	tr '-' '\n' >/Users/Shared/.apfs-container
+	tr '-' '\n')"
 df -kPT apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
 	sed 1d | while read ; do
 	set ${REPLY}
@@ -217,7 +217,7 @@ df -kPT apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volu
 	MountPoint="$@"
 
 	SearchPattern="$(cut -c-7 <<<${DeviceNode##*/})"
-	ConsumedBytes=$(awk -F" " "/^${SearchPattern} / {print \$2}" /Users/Shared/.apfs-container)
+	ConsumedBytes=$(awk -F" " "/^${SearchPattern} / {print \$2}" <<<"${APFSContainer}")
 	if [ "X${ConsumedBytes}" = "X" ]; then
 		# fallback to capacity percentage
 		UsedKBByPercentage=$(bc <<<"${DiskSize} * ${Percentage} / 100")
