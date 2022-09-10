@@ -69,10 +69,10 @@ fi
 
 ZswapStats="$(grep -R . /sys/kernel/debug/zswap/ | while read ; do sed 's/:/=/' <<< ${REPLY##*/} ; done | tr "\n" " ")"
 eval ${ZswapStats}
-if [ ${pool_total_size} -gt 0 ]; then
+if [ ${pool_total_size:-0} -gt 0 ]; then
 	# https://unix.stackexchange.com/a/412760
 	compression_ratio=$(awk -F" " '{printf ("%0.1f",$1*4096/$2); }' <<<"${stored_pages} ${pool_total_size}")
-	CompressionStatus=", compression ratio: ${compression_ratio}"
+	CompressionStatus=", compression ratio: ${compression_ratio:-0}"
 fi
 
 # convert size in memory and on disk to MB
@@ -89,18 +89,18 @@ fi
 
 if [ ${pool_limit_hit} -eq 0 ]; then
 	CheckState="0 OK"
-	ZswapStatus="${ModuleParams}${pool_total_size_mb} MB in RAM, ${stored_size_mb} MB on disk${CompressionStatus}"
+	ZswapStatus="${ModuleParams}${pool_total_size_mb:-0} MB in RAM, ${stored_size_mb:-0} MB on disk${CompressionStatus}"
 else
 	CheckState="1 WARN"
-	ZswapStatus="${ModuleParams}${pool_total_size_mb} MB in RAM, ${stored_size_mb} MB on disk, ${pool_limit_hit} pool limit hits${CompressionStatus}"
+	ZswapStatus="${ModuleParams}${pool_total_size_mb:-0} MB in RAM, ${stored_size_mb:-0} MB on disk, ${pool_limit_hit:-0} pool limit hits${CompressionStatus}"
 fi
 
 if [ "X${DEBUG}" = "XTRUE" ]; then
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} max_pool_percent=${max_pool_percent} ${ZswapStats}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb:-0} pool_total_size_mb=${pool_total_size_mb:-0} compression_ratio=${compression_ratio:-0} max_pool_percent=${max_pool_percent:-0} ${ZswapStats}"
 elif [ -n ${same_filled_pages} ]; then
 	# same_filled_pages only available with recent kernels
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit} same_filled_pages=${same_filled_pages}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb:-0} pool_total_size_mb=${pool_total_size_mb:-0} compression_ratio=${compression_ratio:-0} pool_limit_hit=${pool_limit_hit:-0} same_filled_pages=${same_filled_pages:-0}"
 else
-	ZswapGraphs="stored_size_mb=${stored_size_mb} pool_total_size_mb=${pool_total_size_mb} compression_ratio=${compression_ratio} pool_limit_hit=${pool_limit_hit}"
+	ZswapGraphs="stored_size_mb=${stored_size_mb:-0} pool_total_size_mb=${pool_total_size_mb:-0} compression_ratio=${compression_ratio:-0} pool_limit_hit=${pool_limit_hit:-0}"
 fi
 echo -e "<<<mrpe>>>\n(${0##*/}) Zswap ${CheckState} - ${ZswapStatus} | ${ZswapGraphs}"

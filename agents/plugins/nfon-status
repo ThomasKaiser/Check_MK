@@ -43,8 +43,8 @@ case $? in
 		case $? in
 			1) 
 				# active incident
-				Message="$(awk -F']' '/Investigating/ {print $2}' <<<"${ServiceStatus}")"
-				Message="$(awk -F']' '/Identified/ {print $2}' <<<"${ServiceStatus}")"
+				Message="$(awk -F']' '/Investigating/ {print $2}' <<<"${ServiceStatus}" | tr '\n' ' ')"
+				Message="$(awk -F']' '/Identified/ {print $2}' <<<"${ServiceStatus}" | tr '\n' ' ')"
 				echo "(${0##*/}) NFON%20Status 1 WARN -${Message}. Visit https://status.nfon.com/ for details | active_incident=1"
 				;;
 			*)

@@ -37,6 +37,7 @@ export LC_ALL=C
 OrigLANG=${LANG}
 unset LANG
 
+CMK_VERSION="2.0.0p19"
 export MK_LIBDIR='/usr/local/lib/check_mk_agent'
 export MK_CONFDIR='/etc/check_mk'
 export MK_VARDIR='/var/lib/check_mk_agent'
@@ -165,11 +166,10 @@ function run_cached () {
 export -f run_cached
 
 osver="$(sw_vers | sed 1d | tr "\n" " " | awk -F" " '{print $2" ("$4")"}')"
-checkmkver="2.0.0p19"
 # Hardware=$(system_profiler SPHardwareDataType | egrep "Chip|Processor Name|Model Identifier|Memory|Processor Speed" | awk -F": " '{print $2","}')
 # printf "<<<check_mk>>>\nVersion: $(sed 's/\,$//' <<<${Hardware})\nHostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')\nAgentOS: macOS $osver\n"
 echo "<<<check_mk>>>"
-echo "Version: ${checkmkver}"
+echo "Version: ${CMK_VERSION}"
 echo "AgentOS: macosx $osver"
 echo "Hostname: $(systemsetup -getcomputername | awk -F": " '{print $2}')"
 echo "AgentDirectory: $MK_CONFDIR"
@@ -763,7 +763,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	fi
 
 	# Installamator, jamf cli, smartctl, Check_MK client, Munki
-	echo "Checkmk|${checkmkver}|all|app|-||install ok installed" >>/var/run/de.arts-others.inventory
+	echo "Checkmk|${CMK_VERSION}|all|app|-||install ok installed" >>/var/run/de.arts-others.inventory
 	InstallamatorPath="$(command -v Installomator.sh 2>/dev/null)"
 	if [ -x "${InstallamatorPath}" ]; then
 		echo "Installamator|$(awk -F"=" '/^VERSION/ {print $2}' "${InstallamatorPath}" | tr '\n' '/' | sed -e 's|-|/|g' -e 's|/$||' | tr -d '"')|all|app|-||install ok installed" >>/var/run/de.arts-others.inventory

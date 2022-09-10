@@ -48,6 +48,7 @@ Inventory history can be used to track software changes (Apps and homebrew packa
   * [Expiring Helios WebShare user accounts](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/webshareaccounts)
   * [Expiring Julia Mailoffice certificates](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-julia-certificates.sh)
   * [Invalid logins for Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-invalid-kerio-logins.sh)
+  * [Consumption and fan speeds via IPMI for some server types](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/ipmi-consumption-and-fans.sh)
   * [Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-kerio)
   * [Netio switchable powermeters](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/netio)
   * [NFON services downtime/maintainance](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/nfon-status)
