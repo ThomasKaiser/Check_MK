@@ -180,7 +180,7 @@ echo "LocalDirectory: $LOCALDIR"
 
 echo '<<<df>>>'
 # Check hfs+
-df -kPT hfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
+df -kPT hfs | egrep -v "Time Machine|com.apple.TimeMachine|/Volumes/Recovery|/Volumes/Backups of|/private/var/vm" | \
 	sed 1d | while read ; do
 	set ${REPLY}
 	DeviceNode=$1
@@ -201,7 +201,7 @@ done
 APFSContainer="$(diskutil apfs list | grep -A3 'APFS Volume Disk' | egrep " disk|Capacity Consumed" | \
 	awk -F": " '{print $2}' | awk -F" " '{print $1}' | sed 's/disk/-disk/' | tr '\n' ' ' | \
 	tr '-' '\n')"
-df -kPT apfs | egrep -v "Time Machine|com.apple.TimeMachine.localsnapshots|/Volumes/Recovery|/private/var/vm" | \
+df -kPT apfs | egrep -v "Time Machine|com.apple.TimeMachine|/Volumes/Recovery|/Volumes/Backups of|/private/var/vm" | \
 	sed 1d | while read ; do
 	set ${REPLY}
 	DeviceNode=$1
@@ -276,7 +276,7 @@ Parse_Full_VM_Stat_Output() {
 	done
 } # Parse_Full_VM_Stat_Output
 ParseVM_Stat_Output() {
-	# this will limit the count of graphs to the reasonable ones to understand 
+	# this will limit the count of graphs to the reasonable ones to understand
 	# 'Is the machine's memory too low?'
 	egrep "free|zero|ompre|ins:|outs:" <<<"${VMStatOutput}" | sed 's/"//g' | while read ; do
 		Attribute="$(awk -F":" '{print $1}' <<<"${REPLY}" | tr '[:upper:]' '[:lower:]' | sed 's/\ /_/g')"
@@ -467,7 +467,7 @@ then
 		[ "X${gpu_die_temperature}" != "X" ] && echo "GPU|enabled|thermal|$(tr -d -c '[:digit:]' <<<${gpu_die_temperature})0|70000|passive|90000|critical"
 	fi
 	# check for fan sensor
-	if [ "X${fan}" != "X" ]; then	
+	if [ "X${fan}" != "X" ]; then
 		echo "<<<mrpe>>>"
 		fan_rpm=$(cut -f1 -d_ <<<${fan})
 		echo "(${0##*/}) Fan%20rpm 0 OK - ${fan_rpm} fan rotations per minute | fan_rpm=${fan_rpm:-0}"
@@ -755,7 +755,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 		# root for a reason). First try currently logged in user, then last console user
 		normalUser=$(scutil <<<'show State:/Users/ConsoleUser' | awk '/Name :/ && ! /loginwindow/ { print $3 }')
 		[[ "X${normalUser}" = "X" ]] && normalUser=$(last | awk -F" " '/ console / {print $1}' | egrep -v 'root|_mbsetupuser' | head -n1)
-		if [[ "X${normalUser}" != "X" ]]; then 
+		if [[ "X${normalUser}" != "X" ]]; then
 			su ${normalUser} -c "brew list --versions" | while read ; do
 				echo "$(awk -F" " '{print $1"|"$2}' <<<"${REPLY}")|${Arch}|homebrew|-||install ok installed"
 			done >>/var/run/de.arts-others.inventory
@@ -860,7 +860,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			esac
 			;;
 	esac
-	
+
 	case ${ProductName} in
 		Parallels*)
 			SysManufacturer="Parallels Inc."
@@ -876,7 +876,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 					;;
 			esac
 			;;
-	esac			
+	esac
 
 	# fake dmidecode output
 	printf "<<<dmidecode:sep(58):persist(${UNTIL})>>>\nBIOS Information\n:Vendor: ${SysManufacturer}\n:Version: ${BIOSVersion}\n" >>/var/run/de.arts-others.inventory
@@ -887,7 +887,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 	printf "\n:Max Speed: ${cpu_mhz:-0} MHz\n:Manufacturer: ${CPUManufacturer}\n:Core Count: ${physicalcpu}" >>/var/run/de.arts-others.inventory
 	printf "\n:Status: Populated, Enabled\n:Core Enabled: ${physicalcpu}\n:Thread Count: ${logicalcpu}\n\n" >>/var/run/de.arts-others.inventory
 
-	# Try to collect RAM information. For whatever reasons only last memory module is 
+	# Try to collect RAM information. For whatever reasons only last memory module is
 	# listed by inventory (maybe a bug, Tribe29 internal JIRA issue: FEED-6713)
 	if [ "X${Family}" != "XVirtual Machine" ]; then
 		# only process memory information on real Macs since with VMs it's pointless.
@@ -905,7 +905,7 @@ if [ $? -ne 0 -o "X${LastInventory}" = "X/var/run/de.arts-others.inventory" ]; t
 			printf ":Number Of Devices: 16\n${RAMInfo}\n" >>/var/run/de.arts-others.inventory
 		fi
 	fi
-	
+
 	# fake /proc/cpuinfo (will not report clusters properly on Apple Silicon but who cares?)
 	printf "\n<<<lnx_cpuinfo:sep(58):persist(${UNTIL})>>>\n" >>/var/run/de.arts-others.inventory
 	for processor in $(seq 0 $(( ${logicalcpu} - 1 )) ); do
