@@ -245,13 +245,13 @@ MemFree=$(( $(( $(awk '/speculative:/ {print $3}' <<<"${VMStatOutput}") + $(awk 
 SwapSize="$(sysctl -n vm.swapusage | sed 's/,/./g' | awk -F"used = " '{print $2}' | cut -f1 -d' ')"
 case ${SwapSize} in
 	*K)
-		SwapUsed=$(sed 's/K//' <<< "${SwapSize}" | awk '{print $1*1024}')
+		SwapUsed=$(sed 's/K//' <<< "${SwapSize}" | awk '{printf ("%d",$1*1024);}')
 		;;
 	*M)
-		SwapUsed=$(sed 's/M//' <<< "${SwapSize}" | awk '{print $1*1048576}')
+		SwapUsed=$(sed 's/M//' <<< "${SwapSize}" | awk '{printf ("%d",$1*1048576);}')
 		;;
 	*G)
-		SwapUsed=$(sed 's/G//' <<< "${SwapSize}" | awk '{print $1*1073741824}')
+		SwapUsed=$(sed 's/G//' <<< "${SwapSize}" | awk '{printf ("%d",$1*1073741824);}')
 		;;
 esac
 echo "mem.cache 0"
