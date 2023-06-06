@@ -53,7 +53,11 @@ ParseCertificates() {
 			ExpirationDate="$(awk -F"'" '{print $4}' <<<"${REPLY}")"
 			ExpirationDateInSeconds=$(date "+%s" -d "${ExpirationDate}")
 			if [ "X${eMailAddress}" != "X" ]; then
-				echo -e "${eMailAddress}\t${ExpirationDateInSeconds}" >>"${TmpFile}"
+				case "${eMailAddress}" in
+					*@*)
+						echo -e "${eMailAddress}\t${ExpirationDateInSeconds}" >>"${TmpFile}"
+						;;
+				esac
 			fi
 		done
 	else
@@ -117,7 +121,7 @@ while getopts 'w:c:d:h:o' OPT; do
 			;;
 		d)  CERT_DIR=${OPTARG}
 			;;
-		h)	ShowUsage
+		h)  ShowUsage
 			;;
 		o)  OBFUSCATE=TRUE
 			;;
