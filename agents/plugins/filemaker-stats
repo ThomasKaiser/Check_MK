@@ -1,0 +1,126 @@
+#!/bin/bash
+#
+# checkmk plugin to analyse Filemaker server's Stats.log. If not existing
+# you need to enable it by running 'fmsadmin enable serverstats'
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+case $(uname -s) in
+	Linux)
+		StatsLog="/opt/FileMaker/FileMaker Server/Logs/Stats.log"
+		;;
+	Darwin)
+		StatsLog="/Library/FileMaker Server/Logs/Stats.log"
+		;;
+	*)
+		# unsupported platform
+		echo '<<<mrpe>>>'
+		echo "(${0##*/}) Filemaker%20Stats 3 Unsupported OS"
+		exit 0
+		;;
+esac
+
+if [ ! -f "${StatsLog}" ]; then
+	# statistics need to be enabled by 'fmsadmin enable serverstats'.
+	echo '<<<mrpe>>>'
+	echo "(${0##*/}) Filemaker%20Stats 3 No Stats.log found. Please enable with fmsadmin enable serverstats"
+fi
+
+LastStats="$(tail -n1 "${StatsLog}")"
+TimeNow=$(date "+%s")
+LogTime="$(cut -c-19 <<<"${LastStats}")"
+case $(uname -s) in
+	Linux)
+		LogTimeInSecondsSinceEpoch=$(date "+%s" -d "${LogTime}")
+		;;
+	Darwin)
+		LogTimeInSecondsSinceEpoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "${LogTime}" "+%s")
+		;;
+esac
+
+TimeDiff=$(( ${TimeNow} - ${LogTimeInSecondsSinceEpoch} ))
+echo '<<<mrpe>>>'
+if [ ${TimeDiff} -gt 60 ]; then
+	# last Stats update happenend more than 60 seconds ago
+	FMServerProcesses="$(pgrep fmserver)"
+	if [ "X${FMServerProcesses}" = "X" ]; then
+		# no fmserver process seems to run
+		echo "(${0##*/}) Filemaker%20Stats 2 fmserver not running, last stats update ${TimeDiff} sec ago"
+	else
+		# stats update too old
+		echo "(${0##*/}) Filemaker%20Stats 1 Last stats update ${TimeDiff} sec ago"
+	fi
+	exit 0
+else
+	echo "(${0##*/}) Filemaker%20Stats 0 Last stats update younger than 60 seconds"
+fi
+
+# open databases
+echo '<<<mrpe>>>'
+OpenDatabases=$(awk -F" " '{print $11}' <<<"${LastStats}")
+case ${OpenDatabases} in
+	0)
+		echo "(${0##*/}) Filemaker%20Databases 1 WARN - No databases are currently open | open_filemaker_databases=0"
+		;;
+	*)
+		echo "(${0##*/}) Filemaker%20Databases 0 OK - ${OpenDatabases} databases open | open_filemaker_databases=${OpenDatabases}"
+		;;
+esac
+
+# amount of cached content
+DataCached=$(awk -F" " '{print $8}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+if [ ${DataCached} -lt 80 ]; then
+	echo "(${0##*/}) Filemaker%20Cache 1 WARN - Cache usage ${DataCached}% | filemaker_cache_percentage=${DataCached}"
+else
+	echo "(${0##*/}) Filemaker%20Cache 0 OK - Cache usage ${DataCached}% | filemaker_cache_percentage=${DataCached}"
+fi
+
+# remote calls per second
+RemoteCalls=$(awk -F" " '{print $15}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20Remote%20Calls 0 OK - ${RemoteCalls} remote calls per second | remote_calls_per_second=${RemoteCalls}"
+
+# Filemaker Pro Clients connected
+FMCount=$(awk -F" " '{print $10}' <<<"${LastStats}")
+echo '<<<logins>>>'
+echo ${FMCount}
+
+# Elapsed Time (µs)/call
+ElapsedTime=$(awk -F" " '{print $17}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20Elapsed%20Time 0 OK - ${ElapsedTime} µs/call | elapsed_time=${ElapsedTime}"
+
+# Wait Time (µs)/call 
+WaitTime=$(awk -F" " '{print $18}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20Wait%20Time 0 OK - ${WaitTime} µs/call | wait_time=${WaitTime}"
+
+# I/O Time (µs)/call 
+IOTime=$(awk -F" " '{print $19}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20I%2FO%20Time 0 OK - ${IOTime} µs/call | io_time=${IOTime}"
+
+# Disk I/O read
+DiskRead=$(awk -F" " '{print $6}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20Disk%20KB%2Fsek%20Read 0 OK - ${DiskRead} KB/s | disk_read=${DiskRead}"
+
+# Disk I/O write
+DiskWrite=$(awk -F" " '{print $7}' <<<"${LastStats}")
+echo '<<<mrpe>>>'
+echo "(${0##*/}) Filemaker%20Disk%20KB%2Fsek%20Write 0 OK - ${DiskWrite} KB/s | disk_read=${DiskWrite}"

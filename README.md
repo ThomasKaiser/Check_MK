@@ -54,7 +54,7 @@ Inventory history can be used to track software changes (Apps and homebrew packa
   * [NFON services downtime/maintainance](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/nfon-status)
   * [Outstanding macOS updates with JAMF Pro](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-jss-and-macos-updates)
   * [Reboot needed on Linux?](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-for-reboot.sh)
-  * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-filemaker-server.sh)
+  * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/filemaker-stats)
   * [SMART for ODROID HC2 and other JMS578 devices](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/smart-odroid-hc2)
   * [TimeMachine client based on Netatalk](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/timemachine_agent.linux)
   * [Znapzend / ZFS snapshot age](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-znapzend-age.sh)
