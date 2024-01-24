@@ -120,31 +120,44 @@ ${WGET} -O system_certmanager.html --keep-session-cookies --no-check-certificate
 grep -q "Certificate" system_certmanager.html || error "Not able to retrieve list of certificates"
 
 # parse results
-${HTML2TEXT} system_certmanager.html >system_certmanager.txt
+${HTML2TEXT} -width 1000 system_certmanager.html >system_certmanager.txt
 awk -F": " '/Valid Until/ {print $2}' system_certmanager.txt | while read ; do
 	EXPIRATION_DATE=$(${DATE} --date "${REPLY}" '+%s')
-	EXPIRATION_DIFF=$(( ${EXPIRATION_DATE} - ${TIME_NOW} ))
+	case $? in
+		0)
+			# date parsing worked
+			EXPIRATION_DIFF=$(( ${EXPIRATION_DATE} - ${TIME_NOW} ))
 
-	# collect soon to expire certificates with account names
-	if [ ${EXPIRATION_DIFF} -lt ${CRIT_DIFF} ]; then
-		if [ ${EXPIRATION_DIFF} -gt 0 ]; then
-			grep -B7 "${REPLY}" "${TMP_DIR}/system_certmanager.txt" | head -n1 | cut -c1-28 | sed 's/  */ /g' >>"${TMP_DIR}/crit-names"
-			echo ${EXPIRATION_DIFF} >>"${TMP_DIR}/crit"
-		fi
-	elif [ ${EXPIRATION_DIFF} -lt ${WARN_DIFF} ]; then
-		if [ ${EXPIRATION_DIFF} -gt 0 ]; then
-			grep -B7 "${REPLY}" "${TMP_DIR}/system_certmanager.txt" | head -n1 | cut -c1-28 | sed 's/  */ /g' >>"${TMP_DIR}/warn-names"
-			echo ${EXPIRATION_DIFF} >>"${TMP_DIR}/warn"
-		fi
-	fi
+			# collect soon to expire certificates with account names
+			if [ ${EXPIRATION_DIFF} -lt ${CRIT_DIFF} ]; then
+				if [ ${EXPIRATION_DIFF} -gt 0 ]; then
+					grep -B7 "${REPLY}" "${TMP_DIR}/system_certmanager.txt" | head -n1 | cut -c1-28 | sed 's/  */ /g' >>"${TMP_DIR}/crit-names"
+					echo ${EXPIRATION_DIFF} >>"${TMP_DIR}/crit"
+				fi
+			elif [ ${EXPIRATION_DIFF} -lt ${WARN_DIFF} ]; then
+				if [ ${EXPIRATION_DIFF} -gt 0 ]; then
+					grep -B7 "${REPLY}" "${TMP_DIR}/system_certmanager.txt" | head -n1 | cut -c1-28 | sed 's/  */ /g' >>"${TMP_DIR}/warn-names"
+					echo ${EXPIRATION_DIFF} >>"${TMP_DIR}/warn"
+				fi
+			fi
+			;;
+		1)
+			# date parsing failed
+			echo "${REPLY}" >>"${TMP_DIR}/failed"
+			;;
+	esac
 done
 
 COUNT_OF_CRITS=$(wc -l "${TMP_DIR}/crit" 2>/dev/null | awk -F" " '{print $1}')
 COUNT_OF_WARNS=$(wc -l "${TMP_DIR}/warn" 2>/dev/null | awk -F" " '{print $1}')
+COUNT_OF_FAILURES=$(wc -l "${TMP_DIR}/failed" 2>/dev/null | awk -F" " '{print $1}')
 ACCOUNT_NAMES=$(cat "${TMP_DIR}/crit-names" "${TMP_DIR}/warn-names" 2>/dev/null | tr "\n" "," | sed -e 's/\ ,$//' -e 's/\ ,/, /g' )
 rm -rf "${TMP_DIR}"
 
-if [ ${COUNT_OF_CRITS:=0} -gt 1 ]; then
+if [ ${COUNT_OF_FAILURES:=0} -gt 1 ]; then
+	state="${STATE_CRITICAL}"
+	msg="CRIT - ${COUNT_OF_FAILURES} certificate expiration dates could not be parsed."
+elif [ ${COUNT_OF_CRITS:=0} -gt 1 ]; then
 	state="${STATE_CRITICAL}"
 	msg="CRIT - One or more certificates are about to expire in less than ${CRIT_TRESHOLD} days (${ACCOUNT_NAMES})."
 elif [ ${COUNT_OF_CRITS:=0} -eq 1 ]; then
