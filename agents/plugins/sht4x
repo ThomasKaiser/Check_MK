@@ -13,10 +13,14 @@
 # lsmod | grep sht4x --> should show sht4x and crc8 modules
 # grep sht4x /sys/class/hwmon/hwmon?/name --> should result in something like e.g. hwmon2
 #
-# If a sensor is accessible the output will look like this
+# If one sensor is accessible the output will look like this
 #
 # <<<lnx_thermal:sep(124)>>>
-# Serverraum|enabled|thermal|26740|28000|passive|30000|critical
+# Serverraum|enabled|thermal|21610|28000|passive|30000|critical
+# <<<mrpe>>>
+# (sht4x) Luftfeuchte 0 OK - 48 Prozent | humidity=48
+#
+# Limitations/bugs: only one sensor per host is currently supported
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -42,6 +46,10 @@ WARNHUMIDITY=50
 CRITHUMIDITY=60
 HUMIDITYLABEL="Luftfeuchte"
 
+# If you want this information being piggybagged to another Check_MK host
+# edit and uncomment the following and the very last line of the script
+# echo "<<<<name-of-other-host>>>>"
+
 HWMonDevice="$(grep sht4x /sys/class/hwmon/hwmon?/name)"
 if [ -f "${HWMonDevice%/*}/temp1_input" ]; then
 	read Temp <"${HWMonDevice%/*}/temp1_input"
@@ -66,3 +74,5 @@ if [ -f "${HWMonDevice%/*}/humidity1_input" ]; then
 		echo -e "<<<mrpe>>>\n(${0##*/}) ${HUMIDITYLABEL} ${STATUS} - ${HumidityPercent} Prozent | humidity=${HumidityPercent:-0}"
 	fi
 fi
+
+# echo "<<<<>>>>"
