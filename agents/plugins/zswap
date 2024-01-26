@@ -74,6 +74,7 @@ if [ ${pool_total_size:-0} -gt 0 ]; then
 	compression_ratio=$(awk -F" " '{printf ("%0.1f",$1*4096/$2); }' <<<"${stored_pages} ${pool_total_size}")
 	CompressionStatus=", compression ratio: ${compression_ratio:-0}"
 fi
+[ "X${compression_ratio}" = "X" ] && compression_ratio=0
 
 # convert size in memory and on disk to MB
 pool_total_size_mb=$(awk '{printf ("%0.2f",$1/1048576); }' <<<"${pool_total_size}")

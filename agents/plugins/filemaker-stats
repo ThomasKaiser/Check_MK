@@ -38,6 +38,7 @@ if [ ! -f "${StatsLog}" ]; then
 	# statistics need to be enabled by 'fmsadmin enable serverstats'.
 	echo '<<<mrpe>>>'
 	echo "(${0##*/}) Filemaker%20Stats 3 No Stats.log found. Please enable with fmsadmin enable serverstats"
+	exit 0
 fi
 
 LastStats="$(tail -n1 "${StatsLog}")"
@@ -66,7 +67,7 @@ if [ ${TimeDiff} -gt 60 ]; then
 	fi
 	exit 0
 else
-	echo "(${0##*/}) Filemaker%20Stats 0 Last stats update younger than 60 seconds"
+	echo "(${0##*/}) Filemaker%20Stats 0 Last stats update not older than 60 seconds"
 fi
 
 # open databases

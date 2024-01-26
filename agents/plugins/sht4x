@@ -1,0 +1,68 @@
+#!/bin/bash
+#
+# Checkmk plugin to query a SHT4x thermal/hydro sensor accessible via I2C.
+# 
+# Prior to use it's necessary for the device being properly propagated to
+# the kernel so a hwmon device will be automagically created:
+# https://docs.kernel.org/i2c/instantiating-devices.html
+#
+# On Raspberry Pi OS simply wire the sensor, then add 'dtoverlay=i2c-sensor,sht4x' to
+# /boot/config.txt followed by a reboot. Then check whether kernel modules are loaded
+# and proper hwmon device has been created:
+#
+# lsmod | grep sht4x --> should show sht4x and crc8 modules
+# grep sht4x /sys/class/hwmon/hwmon?/name --> should result in something like e.g. hwmon2
+#
+# If a sensor is accessible the output will look like this
+#
+# <<<lnx_thermal:sep(124)>>>
+# Serverraum|enabled|thermal|26740|28000|passive|30000|critical
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+# 
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+# temperature tresholds in degree celsius:
+WARNTEMP=28
+CRITTEMP=30
+TEMPLABEL="Serverraum"
+
+# humidity tresholds in percent:
+WARNHUMIDITY=50
+CRITHUMIDITY=60
+HUMIDITYLABEL="Luftfeuchte"
+
+HWMonDevice="$(grep sht4x /sys/class/hwmon/hwmon?/name)"
+if [ -f "${HWMonDevice%/*}/temp1_input" ]; then
+	read Temp <"${HWMonDevice%/*}/temp1_input"
+	if [ "X${Temp}" != "X" ]; then
+		# only return sensor data if not empty
+		echo "<<<lnx_thermal:sep(124)>>>"
+		echo "${TEMPLABEL}|enabled|thermal|${Temp}|${WARNTEMP}000|passive|${CRITTEMP}000|critical"
+	fi
+fi
+if [ -f "${HWMonDevice%/*}/humidity1_input" ]; then
+	read Humidity <"${HWMonDevice%/*}/humidity1_input"
+	if [ "X${Humidity}" != "X" ]; then
+		# only return sensor data if not empty
+		HumidityPercent=$(( ${Humidity} / 1000 ))
+		if [ ${HumidityPercent} -ge ${CRITHUMIDITY} ]; then
+			STATUS="2 CRIT"
+		elif [ ${HumidityPercent} -ge ${WARNHUMIDITY} ]; then
+			STATUS="1 WARN"
+		else
+			STATUS="0 OK"
+		fi
+		echo -e "<<<mrpe>>>\n(${0##*/}) ${HUMIDITYLABEL} ${STATUS} - ${HumidityPercent} Prozent | humidity=${HumidityPercent:-0}"
+	fi
+fi
