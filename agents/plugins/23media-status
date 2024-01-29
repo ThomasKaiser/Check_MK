@@ -41,6 +41,9 @@ MaintenanceSystems=$(grep -v "^   FRA" <<<"${ServiceStatus}" | grep -c "Maintena
 Status="$(grep -v "Operational" <<<"${ServiceStatus}" | tr '\n' ',' | sed -e 's/,$//' -e 's/ \+/ /g' -e 's/\ Under\ Maintenance//g')"
 if [ ${FailedSystems} -eq 0 -a ${MaintenanceSystems} -eq 0  ]; then
 	echo "(${0##*/}) 23Media%20Status 0 OK - All Systems Operational | failed_systems=0 maintenance_systems=0"
+elif [ ${MaintenanceSystems} -ne 0  ]; then
+	# remain OK/green when systems are only under maintenance
+	echo "(${0##*/}) 23Media%20Status 0 OK - ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.23m.com/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}"
 else
 	echo "(${0##*/}) 23Media%20Status 1 WARN - ${FailedSystems} systems failed, ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.23m.com/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}" 
 fi
