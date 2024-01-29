@@ -6,9 +6,9 @@
 # the kernel so a hwmon device will be automagically created:
 # https://docs.kernel.org/i2c/instantiating-devices.html
 #
-# On Raspberry Pi OS simply wire the sensor, then add 'dtoverlay=i2c-sensor,sht4x' to
-# /boot/config.txt followed by a reboot. Then check whether kernel modules are loaded
-# and proper hwmon device has been created:
+# On Raspberries simply wire the sensor, then add 'dtoverlay=i2c-sensor,sht4x'
+# to /boot/config.txt followed by a reboot. This should result in needed kernel
+# modules being loaded and hwmon device beeing created. To check for this:
 #
 # lsmod | grep sht4x --> should show sht4x and crc8 modules
 # grep sht4x /sys/class/hwmon/hwmon?/name --> should result in something like e.g. hwmon2
