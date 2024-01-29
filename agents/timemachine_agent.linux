@@ -247,14 +247,12 @@ PrepareForMonitoring() {
 
 	# based on name of the Mac the time until latest finished backup is
 	# treated differently: On 'server' macs 2 days are allowed while on
-	# client machines it's 9 days
+	# client machines it's 60 days (to not always get false positives
+	# when employees are on vacation and so on)
 
 	case ${VolumeName} in
-		mac-eficws)
-			MaxBackupAge=1
-			;;
 		mac-*)
-			MaxBackupAge=8
+			MaxBackupAge=60
 			;;
 		*)
 			MaxBackupAge=1
