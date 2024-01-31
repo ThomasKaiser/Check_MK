@@ -42,8 +42,8 @@
 # START CONFIG SECTION
 # The local path to your kerio connect mailstore. Change if different
 kerioStore="/opt/kerio/mailserver"
-# put your kerio admin url.
-kerioAdminURL="https://your.url.here:4040"
+# adjust your kerio admin url if necessary
+kerioAdminURL="https://127.0.0.1:4040"
 # username and password have to be stored in a secured file /etc/kerio-credentials
 credentialPermissions="$(ls -la /etc/kerio-credentials | awk -F" " '{print $1}')"
 case ${credentialPermissions} in
@@ -53,7 +53,7 @@ case ${credentialPermissions} in
 		kerioAdminPass="$(cut -f2 -d: <<<"${kerioCredentials}")"
 		;;
 	*)
-		echo '/etc/kerio-credentials must only be readable by root. Aborting.' >&2
+		echo -e "<<<mrpe>>>\n(${0##*/}) ${MTAName}%20Queue 3 /etc/kerio-credentials must only be readable by root. Aborting."
 		exit 1
 		;;
 esac
@@ -69,18 +69,22 @@ login=$(curl --cookie "${CookieFile}" --cookie-jar "${CookieFile}" -k -X POST -H
 ' -silent ${kerioAdminURL}/admin/api/jsonrpc)
 token=$(echo $login | sed 's/\\\\\//\//g' | sed 's/[{}]//g' | awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | sed 's/\"\:\"/\|/g' | sed 's/[\,]/ /g' | sed 's/\"//g' | grep -w token | awk -F '|' '{ print $3 }')
 
+echo '<<<mrpe>>>'
 # query count of pending mails in queue
 queue=$(curl --cookie "${CookieFile}" -k -X POST -H "Content-type: application/json" -H "X-Token: $token" -d '{"jsonrpc":"2.0","id":1,"method":"Queue.get","params":{"query":{"fields":[]}}}' -silent ${kerioAdminURL}/admin/api/jsonrpc)
-countOfStuckMessages=$(echo "${queue}" | tr '"' '\n' | grep -A1 'totalItems' | tr -c -d '[:digit:]')
-if [ $countOfStuckMessages -ge 10 ]; then
-	checkResult=2
-elif [ $countOfStuckMessages -ge 2 ]; then
-	checkResult=1
+if [ "X${queue}" = "Xqueue" ]; then
+	echo "(${0##*/}) ${MTAName}%20Queue 3 Not able to parse/access ${kerioAdminURL}/admin/api/jsonrpc | kerio_queue=${countOfStuckMessages:-0}"
 else
-	checkResult=0
+	countOfStuckMessages=$(echo "${queue}" | tr '"' '\n' | grep -A1 'totalItems' | tr -c -d '[:digit:]')
+	if [ ${countOfStuckMessages:-0} -ge 10 ]; then
+		checkResult=2
+	elif [ ${countOfStuckMessages:-0} -ge 2 ]; then
+		checkResult=1
+	else
+		checkResult=0
+	fi
+	echo "(${0##*/}) ${MTAName}%20Queue ${checkResult} ${countOfStuckMessages} in queue | kerio_queue=${countOfStuckMessages:-0}"
 fi
-echo '<<<mrpe>>>'
-echo "(${0##*/}) ${MTAName}%20Queue ${checkResult} ${countOfStuckMessages} in queue | kerio_queue=${countOfStuckMessages}"
 
 # check Kerio health
 echo '<<<mrpe>>>'
@@ -113,9 +117,11 @@ if [ -n "${SystemdStartTime}" ]; then
 		# Querying Kerio statistics worked, now check whether subscription expires soon
 		ExpireDiffInDays=$(( $(( ${ExpireDateInSeconds} - ${TimeNow} )) / 86400 ))
 		if [ ${ExpireDiffInDays} -ge 60 ]; then
-			echo "(${0##*/}) ${MTAName}%20status 0 Status: Kerio is running, ${RunningSince} days, ${StorageOccupation}% storage used | kerio_uptime=${UptimeGraph}"
+			echo "(${0##*/}) ${MTAName}%20status 0 Status: Kerio is running, ${RunningSince} days, ${StorageOccupation}% storage used, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=${UptimeGraph} storage_used=${StorageOccupation:-0}"
+		elif [ ${ExpireDiffInDays} -ge 20 ]; then
+			echo "(${0##*/}) ${MTAName}%20status 1 Status: Kerio is running, ${RunningSince} days, ${StorageOccupation}% storage used, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=${UptimeGraph} storage_used=${StorageOccupation:-0}"
 		else
-			echo "(${0##*/}) ${MTAName}%20status 1 Kerio is running, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=${UptimeGraph}"
+			echo "(${0##*/}) ${MTAName}%20status 2 Status: Kerio is running, ${RunningSince} days, ${StorageOccupation}% storage used, Subscription ends in ${ExpireDiffInDays} days | kerio_uptime=${UptimeGraph} storage_used=${StorageOccupation:-0}"
 		fi
 	else
 		echo "(${0##*/}) ${MTAName}%20status 2 Kerio does not report back to statistics query"
