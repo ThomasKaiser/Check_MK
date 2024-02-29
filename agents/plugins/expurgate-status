@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# Check status of Expurgate/Cyren spam/virus protection services. 
+# Don't run this every minute to not overwhelm their status mechanism.
+# Put it for example in plugins/300 directory. The plugin uses MRPE
+# output syntax since I like spaces in service names.
+#
+# By default output is assigned to a host called 'Internet' via
+# Check_MK's piggyback mechanism. Adjust if needed.
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Use piggyback mechanism to let the status appear below the virtual host
+# 'Internet'
+echo -e "<<<<Internet>>>>\n<<<mrpe>>>"
+
+type links >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+	echo "(${0##*/}) Expurgate%20Status 3 UNKN - No links binary found. Please install it"
+	echo '<<<<>>>>'
+	exit 0
+fi
+
+ServiceStatus="$(links -dump https://status.expurgate.net/ | sed -n '/^   eXpurgate.Cloud/,$p' | sed '1,/^   Operational$/!d')"
+FailedSystems=$(grep -E -v -c "Operational|Maintenance" <<<"${ServiceStatus}")
+MaintenanceSystems=$(grep -c "Maintenance" <<<"${ServiceStatus}")
+Status="$(grep -v "Operational" <<<"${ServiceStatus}" | tr '\n' ',' | sed -e 's/,$//' -e 's/ \+/ /g' -e 's/\ Under\ Maintenance//g')"
+if [ ${FailedSystems} -eq 0 -a ${MaintenanceSystems} -eq 0  ]; then
+	echo "(${0##*/}) Expurgate%20Status 0 OK - All Systems Operational | failed_systems=0 maintenance_systems=0"
+elif [ ${MaintenanceSystems} -ne 0  ]; then
+	# remain OK/green when systems are only under maintenance
+	echo "(${0##*/}) Expurgate%20Status 0 OK - ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}"
+else
+	echo "(${0##*/}) Expurgate%20Status 1 WARN - ${FailedSystems} systems failed, ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}" 
+fi
+
+# end of piggybacked mode
+echo '<<<<>>>>'

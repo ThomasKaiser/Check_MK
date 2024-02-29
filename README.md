@@ -47,6 +47,7 @@ Inventory history can be used to track software changes (Apps and homebrew packa
   * [City temperatures via openweathermap.org](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/city-temperatures)
   * [Expiring Helios WebShare user accounts](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/webshareaccounts)
   * [Expiring Julia Mailoffice certificates](https://github.com/ThomasKaiser/Check_MK/blob/master/mrpe/check-julia-certificates.sh)
+  * [Expurgate spam/virus protection](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/expurgate-status)
   * [Filemaker server on macOS or Linux](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/filemaker-stats)
   * [Invalid logins for Kerio Connect](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/monitor-invalid-kerio-logins.sh)
   * [Consumption and fan speeds via IPMI for some server types](https://github.com/ThomasKaiser/Check_MK/blob/master/agents/plugins/ipmi-consumption-and-fans.sh)
