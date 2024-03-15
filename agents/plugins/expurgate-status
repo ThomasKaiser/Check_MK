@@ -36,16 +36,17 @@ if [ $? -ne 0 ]; then
 fi
 
 ServiceStatus="$(links -dump https://status.expurgate.net/ | sed -n '/^   eXpurgate.Cloud/,$p' | sed '1,/^   Operational$/!d')"
-FailedSystems=$(grep -E -v -c "Operational|Maintenance" <<<"${ServiceStatus}")
+FailedSystems=$(grep -E -v -c "Operational|Maintenance|Degraded Performance" <<<"${ServiceStatus}")
 MaintenanceSystems=$(grep -c "Maintenance" <<<"${ServiceStatus}")
+DegradedPerformance=$(grep -c "Degraded Performance" <<<"${ServiceStatus}")
 Status="$(grep -v "Operational" <<<"${ServiceStatus}" | tr '\n' ',' | sed -e 's/,$//' -e 's/ \+/ /g' -e 's/\ Under\ Maintenance//g')"
-if [ ${FailedSystems} -eq 0 -a ${MaintenanceSystems} -eq 0  ]; then
-	echo "(${0##*/}) Expurgate%20Status 0 OK - All Systems Operational | failed_systems=0 maintenance_systems=0"
-elif [ ${MaintenanceSystems} -ne 0  ]; then
+if [ ${FailedSystems} -eq 0 -a ${MaintenanceSystems} -eq 0 -a ${DegradedPerformance} -eq 0 ]; then
+	echo "(${0##*/}) Expurgate%20Status 0 OK - All Systems Operational: https://status.expurgate.net | failed_systems=0 maintenance_systems=0 degraded_performance=${DegradedPerformance:-0}"
+elif [ ${MaintenanceSystems} -ne 0 ]; then
 	# remain OK/green when systems are only under maintenance
-	echo "(${0##*/}) Expurgate%20Status 0 OK - ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}"
+	echo "(${0##*/}) Expurgate%20Status 0 OK - ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}  degraded_performance=${DegradedPerformance:-0}"
 else
-	echo "(${0##*/}) Expurgate%20Status 1 WARN - ${FailedSystems} systems failed, ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}" 
+	echo "(${0##*/}) Expurgate%20Status 1 WARN - ${FailedSystems} systems failed, ${DegradedPerformance} systems with degraded performance, ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.expurgate.net/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0} degraded_performance=${DegradedPerformance:-0}" 
 fi
 
 # end of piggybacked mode
