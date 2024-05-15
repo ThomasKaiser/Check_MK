@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# CheckMK plugin to verify certbot operations.
+#
+# '/usr/bin/certbot renew --no-self-upgrade' may exit with 0 due to all certs
+# being skipped since 'Cert not yet due for renewal'. As such we need to loop
+# through all of the certs and check individually.
+#
+# Another issue is certbot already running in parallel which we also need to
+# take care of by trying again after a random amount of time.
+#
+# Let this check run every 24 hours as such put the file into
+# /usr/lib/check_mk_agent/plugins/86400
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# tails. You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+snore() {
+	# https://blog.dhampir.no/content/sleeping-without-a-subprocess-in-bash-and-how-to-sleep-forever
+	local IFS
+	[[ -n "${_snore_fd:-}" ]] || { exec {_snore_fd}<> <(:); } 2>/dev/null ||
+	{
+		# workaround for MacOS and similar systems
+		local fifo
+		fifo=$(mktemp -u)
+		mkfifo -m 700 "$fifo"
+		exec {_snore_fd}<>"$fifo"
+		rm "$fifo"
+	}
+	read ${1:+-t "$1"} -u $_snore_fd || :
+} # snore
+
+check_certs() {
+	# loop through "$1" and check each certificate individually
+	echo "$MyCerts" | while read ; do
+		CertDetails="$(certbot certonly --test-cert -d "${REPLY}" --dry-run --apache 2>/dev/null)"
+		if [ $? -ne 0 ]; then
+			tr "\n" " " <<<"${CertDetails}"
+			echo ""
+		fi
+	done
+} # check_certs
+
+MyCerts="$(certbot renew --no-self-upgrade 2>/dev/null | awk -F"/" '/Processing/ {print $5}' | sed 's/\.conf//')"
+
+if [ "X${MyCerts}" = "X" ]; then
+	# empty list, wait for 60 - 130 seconds and try again
+	snore $(( 60 + ${RANDOM} / 500 ))
+	MyCerts="$(certbot renew --no-self-upgrade 2>/dev/null | awk -F"/" '/Processing/ {print $5}' | sed 's/\.conf//')"
+fi
+
+if [ "X${MyCerts}" = "X" ]; then
+	echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 3 UNKN - Not able to fetch certificate list | certs_ok=0 certs_failed=0"
+else
+	CountOfCerts=$(wc -l <<<"${MyCerts}")
+	CertStatus="$(check_certs "${MyCerts}")"
+	if [ "X${CertStatus}" = "X" ]; then
+		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 0 OK - ${CountOfCerts} w/o problems | certs_ok=${CountOfCerts:-0} certs_failed=0"
+	else
+		CountOfProblemCerts=$(wc -l <<<"${CertStatus}")
+		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 2 CRIT - ${CertStatus} | certs_ok=$(( ${CountOfCerts:-0} - ${CountOfProblemCerts:-0} )) certs_failed=${CountOfProblemCerts:-0}"
+	fi
+fi
