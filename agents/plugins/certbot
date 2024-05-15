@@ -71,6 +71,6 @@ else
 		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 0 OK - ${CountOfCerts} w/o problems | certs_ok=${CountOfCerts:-0} certs_failed=0"
 	else
 		CountOfProblemCerts=$(wc -l <<<"${CertStatus}")
-		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 2 CRIT - ${CertStatus} | certs_ok=$(( ${CountOfCerts:-0} - ${CountOfProblemCerts:-0} )) certs_failed=${CountOfProblemCerts:-0}"
+		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 2 CRIT - $(tr '\n' '/' <<<${CertStatus}) | certs_ok=$(( ${CountOfCerts:-0} - ${CountOfProblemCerts:-0} )) certs_failed=${CountOfProblemCerts:-0}"
 	fi
 fi
