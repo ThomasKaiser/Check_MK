@@ -37,7 +37,7 @@ export LC_ALL=C
 OrigLANG=${LANG}
 unset LANG
 
-CMK_VERSION="2.0.0p19"
+CMK_VERSION="2.3.0p11"
 export MK_LIBDIR='/usr/local/lib/check_mk_agent'
 export MK_CONFDIR='/etc/check_mk'
 export MK_VARDIR='/var/lib/check_mk_agent'
