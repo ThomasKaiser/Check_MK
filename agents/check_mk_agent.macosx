@@ -400,16 +400,13 @@ if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
 	IFS=$OLD_IFS
 fi
 
-# Doesn't work since 10.14 due to missing permissions for tmutil
-case $osver in
-	10.?.*|10.1[0-3].*)
-		if command -v tmutil >/dev/null 2>&1
-		then
-			echo '<<<timemachine>>>'
-			tmutil latestbackup 2>&1
-		fi
-		;;
-esac
+# Full Disk Access has to be allowed to /bin/sh for this to work on macOS 10.14+
+# Only allow it if you are aware what the security implications of it are!!!
+if command -v tmutil >/dev/null 2>&1
+then
+	echo '<<<timemachine>>>'
+	tmutil latestbackup 2>&1
+fi
 
 # temperatures and sensors, requires HardwareMonitor.app. On newer machines/OSes
 # HardwareMonitor.app has no access to relevant sensors any more and if macOS'
