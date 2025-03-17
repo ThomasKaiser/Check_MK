@@ -3,12 +3,38 @@
 # /usr/local/ao/configure-netatalk.sh
 
 ServerName=tk-backup
-SharePrefix=/mnt/timemachine
+SharePrefix=/daten/timemachine
+ZFSPrefix=daten/encrypted/timemachine
 ConfigDir=/etc/tk-backup
 AFPConf=/usr/local/etc/afp.conf
-# MonitorString="veeam"
-MonitorString="timemachine"
+SMBConf=/etc/samba/smb.conf
+SMBOrigConf=/etc/samba/smb.conf.orig
+MonitorString="veeam"
+# MonitorString="timemachine"
 MonitorLocation=/var/run/backup-results.txt
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+GenerateSMBConf() {
+	cat "${SMBOrigConf}" >"${SMBConf}"
+	# if a hostname has been provided as argument then generate afp.conf
+	# only with this single volume if existent. Otherwise generate afp.conf
+	# from all config files
+	if [ -f "${ConfigDir}/${1}.conf" ]; then
+		GenerateSMBShare "${ConfigDir}/${1}.conf" >>"${SMBConf}"
+	else
+		echo -e "Working\c"
+		for i in "${ConfigDir}"/*.conf ; do
+			GenerateSMBShare "${i}" >>"${SMBConf}"
+			echo -e ".\c"
+		done
+		echo " Done!"
+		ShowStatus
+	fi
+
+	# Reload config
+	smbcontrol smbd reload-config
+} # GenerateSMBConf
 
 GenerateAFPConf() {
 	cat >"${AFPConf}" <<-EOF
@@ -24,20 +50,6 @@ GenerateAFPConf() {
 	zeroconf name = ${ServerName}
 	log file = /var/log/afp.log
 	log level = default:info
-
-	[a.i.s. Backup]
-	path = /mnt/direkt-backups/ais
-	read only = no
-	unix priv = yes
-	file perm = 0664
-	directory perm = 0775
-	umask = 0002
-	invisible dots = no
-	time machine = no
-	valid users = "ais"
-	invalid users = 
-	rolist = 
-	rwlist = "ais"
 	
 	EOF
 
@@ -45,11 +57,11 @@ GenerateAFPConf() {
 	# only with this single volume if existent. Otherwise generate afp.conf
 	# from all config files
 	if [ -f "${ConfigDir}/${1}.conf" ]; then
-		GenerateVolume "${ConfigDir}/${1}.conf" >>"${AFPConf}"
+		GenerateAFPVolume "${ConfigDir}/${1}.conf" >>"${AFPConf}"
 	else
 		echo -e "Working\c"
 		for i in "${ConfigDir}"/*.conf ; do
-			GenerateVolume "${i}" >>"${AFPConf}"
+			GenerateAFPVolume "${i}" >>"${AFPConf}"
 			echo -e ".\c"
 		done
 		echo " Done!"
@@ -63,7 +75,59 @@ GenerateAFPConf() {
 	systemctl reload avahi-daemon
 } # GenerateAFPConf
 
-GenerateVolume() {
+GenerateSMBShare() {
+	ConfigFile="${1}"
+	Config=${ConfigFile##*/}
+	Hostname="${Config%.conf}"
+	RawQuota=$(awk '/quota/ {print $2}' <"${ConfigFile}")
+	Quota=$(( ${RawQuota} * 1024 / 1000 ))
+	VolumeName=$(awk '/volname/ {print $2}' <"${ConfigFile}" 2>/dev/null)
+	if [ "X${VolumeName}" = "X" ]; then
+		VolumeName="${Hostname}"
+	fi
+
+	echo "[${VolumeName}]"
+	echo "path = ${SharePrefix}/${VolumeName}"
+	echo "omment = TM-Backup von ${VolumeName}"
+
+	cat <<-EOF
+	guest ok = yes
+	guest only = no
+	read only = no
+	browseable = no
+	inherit acls = no
+	inherit permissions = no
+	ea support = yes
+	store dos attributes = no
+	fruit:encoding = private
+	fruit:locking = none
+	fruit:metadata = stream
+	fruit:resource = file
+	fruit:veto_appledouble = no
+	fruit:wipe_intentionally_left_blank_rfork = yes
+	fruit:delete_empty_adfiles = yes
+	fruit:time machine = yes
+	vfs objects =  fruit streams_xattr
+	printable = no
+	create mask = 0664
+	force create mode = 0664
+	directory mask = 0775
+	force directory mode = 0775
+	hide special files = yes
+	follow symlinks = yes
+	wide links = no
+	hide dot files = yes
+	read list = 
+	write list = 
+	
+	EOF
+
+	zfs create -o mountpoint=${SharePrefix}/${VolumeName} ${ZFSPrefix}/${VolumeName} 2>/dev/null
+	zfs set quota=${Quota}M ${ZFSPrefix}/${VolumeName}
+	chmod 2777 "${SharePrefix}/${VolumeName}"
+} # GenerateSMBShare
+
+GenerateAFPVolume() {
 	ConfigFile="${1}"
 	Config=${ConfigFile##*/}
 	Hostname="${Config%.conf}"
@@ -85,6 +149,7 @@ GenerateVolume() {
 	umask = 0002
 	invisible dots = no
 	time machine = yes
+	spotlight = no
 	valid users = "nobody"
 	invalid users = 
 	rolist = 
@@ -92,10 +157,10 @@ GenerateVolume() {
 	
 	EOF
 
-	zfs create -o mountpoint=${SharePrefix}/${VolumeName} riesenpool/timemachine/${VolumeName} 2>/dev/null
-	zfs set quota=${Quota}M riesenpool/timemachine/${VolumeName}
+	zfs create -o mountpoint=${SharePrefix}/${VolumeName} ${ZFSPrefix}/${VolumeName} 2>/dev/null
+	zfs set quota=${Quota}M ${ZFSPrefix}/${VolumeName}
 	chmod 2777 "${SharePrefix}/${VolumeName}"
-} # GenerateVolume
+} # GenerateAFPVolume
 
 ShowStatus() {
 	# check if stdout is a terminal...
@@ -134,7 +199,7 @@ ShowMachineStatus() {
 
 	# check space requirements
 	Quota=$(awk '/quota/ {print $2}' <"${ConfigFile}")
-	SpaceUsed=$(awk -F" " "/\/mnt\/timemachine\/${VolumeName}$/ {print \$3}" <"${TmpFile}" 2>/dev/null)
+	SpaceUsed=$(awk -F" " "/\/daten\/timemachine\/${VolumeName}$/ {print \$3}" <"${TmpFile}" 2>/dev/null)
 	case $? in
 		0)
 			# Mountpoint is known
@@ -153,7 +218,7 @@ ShowMachineStatus() {
 
 	printf "%12s" "${VolumeName}"
 
-	ResultDir="/mnt/timemachine/${VolumeName}/${Hostname}.sparsebundle"
+	ResultDir="${SharePrefix}/${VolumeName}/${Hostname}.sparsebundle"
 	ResultFile="${ResultDir}/com.apple.TimeMachine.Results.plist"
 
 	# count snapshots and get oldest
@@ -242,7 +307,7 @@ PrepareForMonitoring() {
 		VolumeName="${Hostname}"
 	fi
 
-	ResultDir="/mnt/timemachine/${VolumeName}/${Hostname}.sparsebundle"
+	ResultDir="${SharePrefix}/${VolumeName}/${Hostname}.sparsebundle"
 	ResultFile="${ResultDir}/com.apple.TimeMachine.Results.plist"
 
 	# based on name of the Mac the time until latest finished backup is
@@ -287,7 +352,7 @@ PrepareForMonitoring() {
 	# generate detailed report for mac servers (piggyback operation):
 	if [ ${MaxBackupAge} -eq 1 ]; then
 		VMName="$(echo "${VolumeName}" | sed -e 's/outdoor/srv-outdoor/')"
-		TotalSize=$(( $(df /mnt/timemachine/${VolumeName} | awk -F" " '/riesenpool/ {print $3}') * 1024 ))
+		TotalSize=$(( $(df "${SharePrefix}/${VolumeName}" | awk -F" " '/riesenpool/ {print $3}') * 1024 ))
 		echo -e "<<<<${VMName}>>>>\n<<<${MonitorString}_client:sep(9)>>>" >>"${DetailsTmpFile}"
 		echo -e "Status\t${BackupResult}\nJobName\t${VolumeName}\nTotalSizeByte\t${TotalSize}" >>"${DetailsTmpFile}"
 		echo -e "ReadSizeByte\t${BytesCopied}\nTransferedSizeByte\t${BytesCopied}" >>"${DetailsTmpFile}"
@@ -299,6 +364,9 @@ PrepareForMonitoring() {
 case "${0}" in
 	*configure-netatalk*)
 		GenerateAFPConf $1
+		;;
+	*configure-samba*)
+		GenerateSMBConf $1
 		;;
 	*show-backup-status*)
 		ShowStatus
