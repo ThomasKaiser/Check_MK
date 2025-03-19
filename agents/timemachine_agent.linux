@@ -34,6 +34,10 @@ GenerateSMBConf() {
 
 	# Reload config
 	smbcontrol smbd reload-config
+
+	# set quota for parent ZFS dataset
+	QuotaSum=$(awk -F" " '/quota/ {print $2}' "${ConfigDir}"/*.conf | awk -F" " '{s+=$1} END {printf "%.0d\n", s}')
+	zfs set quota=$(( QuotaSum / 900 ))G ${ZFSPrefix}
 } # GenerateSMBConf
 
 GenerateAFPConf() {
