@@ -17,15 +17,15 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 GenerateSMBConf() {
 	cat "${SMBOrigConf}" >"${SMBConf}"
-	# if a hostname has been provided as argument then generate afp.conf
-	# only with this single volume if existent. Otherwise generate afp.conf
-	# from all config files
+	# if a hostname has been provided as argument then generate smb.conf only
+	# with this single volume if existent and set it to browseable. Otherwise
+	# generate smb.conf from all config files with 'browseable = no'
 	if [ -f "${ConfigDir}/${1}.conf" ]; then
-		GenerateSMBShare "${ConfigDir}/${1}.conf" >>"${SMBConf}"
+		GenerateSMBShare "${ConfigDir}/${1}.conf" yes >>"${SMBConf}"
 	else
 		echo -e "Working\c"
 		for i in "${ConfigDir}"/*.conf ; do
-			GenerateSMBShare "${i}" >>"${SMBConf}"
+			GenerateSMBShare "${i}" no >>"${SMBConf}"
 			echo -e ".\c"
 		done
 		echo " Done!"
@@ -81,6 +81,7 @@ GenerateAFPConf() {
 
 GenerateSMBShare() {
 	ConfigFile="${1}"
+	IsBrowseable="${2}"
 	Config=${ConfigFile##*/}
 	Hostname="${Config%.conf}"
 	RawQuota=$(awk '/quota/ {print $2}' <"${ConfigFile}")
@@ -98,7 +99,7 @@ GenerateSMBShare() {
 	guest ok = yes
 	guest only = no
 	read only = no
-	browseable = no
+	browseable = ${IsBrowseable}
 	inherit acls = no
 	inherit permissions = no
 	ea support = yes
@@ -367,10 +368,10 @@ PrepareForMonitoring() {
 
 case "${0}" in
 	*configure-netatalk*)
-		GenerateAFPConf $1
+		GenerateAFPConf "$1"
 		;;
 	*configure-samba*)
-		GenerateSMBConf $1
+		GenerateSMBConf "$1"
 		;;
 	*show-backup-status*)
 		ShowStatus
