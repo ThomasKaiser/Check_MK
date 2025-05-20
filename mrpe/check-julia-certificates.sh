@@ -48,9 +48,9 @@ ParseCertificates() {
 	# email address and expiration date in seconds since epoch
 	if [ -f "${CERT_DIR}/key.db" ]; then
 		# parse Julia's SQLite database containing certificate info
-		/opt/julia/bin/sqlite3 "${CERT_DIR}/key.db" .dump | awk -F"," '{print $12" "$11}' | sed -r '/^\s*$/d' | while read ; do
-			eMailAddress="$(awk -F"'" '{print $2}' <<<"${REPLY}")"
-			ExpirationDate="$(awk -F"'" '{print $4}' <<<"${REPLY}")"
+		/opt/julia/bin/sqlite3 "${CERT_DIR}/key.db" .dump | awk -F"," '{print $12" "$11}' | sed -r '/^\s*$/d' | tr -d "'" | while read ; do
+			eMailAddress="$(awk -F" " '{print $1}' <<<"${REPLY}")"
+			ExpirationDate="$(awk -F" " '{print $2}' <<<"${REPLY}")"
 			ExpirationDateInSeconds=$(date "+%s" -d "${ExpirationDate}")
 			if [ "X${eMailAddress}" != "X" ]; then
 				case "${eMailAddress}" in
