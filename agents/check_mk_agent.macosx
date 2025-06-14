@@ -290,14 +290,14 @@ VMStatGraph=$(ParseVM_Stat_Output)
 SwapfilePrefix="$(sysctl -n vm.swapfileprefix)"
 CountOfSwapFiles=$(ls "${SwapfilePrefix}"* 2>/dev/null | wc -l | tr -d -c '[:digit:]')
 VMStatus="${CountOfSwapFiles} swapfile(s)"
-MemoryPressure=$(sysctl -n vm.memory_pressure)
-if [ ${MemoryPressure:-0} -gt 0 ]; then
-	# not precise at all since the memory pressure graph takes many other values into account:
-	# http://newosxbook.com/articles/MemoryPressure.html https://apple.stackexchange.com/q/170227
-	CheckStatus="1 WARN"
-else
-	CheckStatus="0 OK"
-fi
+MemoryPressure=$(sysctl -n kern.memorystatus_vm_pressure_level)
+# https://newosxbook.com/articles/MemoryPressure.html https://apple.stackexchange.com/q/170227
+case ${MemoryPressure:-0} in
+  1) CheckStatus="0 OK";;
+  2) CheckStatus="1 WARN";;
+  4) CheckStatus="2 CRIT";;
+  *) CheckStatus="3 UNKN";;
+esac
 RunningApps="$(ps auxw -o rss,vsz,command)"
 AllApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -c MacOS)
 AdobeApps=$(grep "/Applications/" <<<"${RunningApps}" | grep -i -c adobe)
