@@ -8,6 +8,11 @@
 # By default output is assigned to a host called 'Internet' via
 # Check_MK's piggyback mechanism. Adjust if needed.
 #
+# With 23M's new 'status page' as of August 2025 any reasonable parsing
+# is no longer possible as such no differentiation between failed systems
+# and those under maintenance possible any more. In addition the status
+# page now tracks users visiting it through the AWS cloud :(
+#
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
 #
@@ -35,17 +40,11 @@ if [ $? -ne 0 ]; then
 	exit 0
 fi
 
-ServiceStatus="$(links -dump https://status.23m.com/ | sed -n '/^   Backbone /,$p' | sed '1,/^   Operational$/!d')"
-FailedSystems=$(egrep -v -c "Operational|Maintenance" <<<"${ServiceStatus}")
-MaintenanceSystems=$(grep -v "^   FRA" <<<"${ServiceStatus}" | grep -c "Maintenance")
-Status="$(grep -v "Operational" <<<"${ServiceStatus}" | tr '\n' ',' | sed -e 's/,$//' -e 's/ \+/ /g' -e 's/\ Under\ Maintenance//g')"
-if [ ${FailedSystems} -eq 0 -a ${MaintenanceSystems} -eq 0  ]; then
-	echo "(${0##*/}) 23Media%20Status 0 OK - All Systems Operational | failed_systems=0 maintenance_systems=0"
-elif [ ${MaintenanceSystems} -ne 0  ]; then
-	# remain OK/green when systems are only under maintenance
-	echo "(${0##*/}) 23Media%20Status 0 OK - ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.23m.com/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}"
+ServiceStatus="$(links -dump https://status.23m.com/ | head -n10 | grep "All services operational")"
+if [ -n "${ServiceStatus}" ]; then
+	echo "(${0##*/}) 23Media%20Status 0 OK - All Systems Operational"
 else
-	echo "(${0##*/}) 23Media%20Status 1 WARN - ${FailedSystems} systems failed, ${MaintenanceSystems} under maintenance:${Status}. Visit https://status.23m.com/ for details | failed_systems=${FailedSystems:-0} maintenance_systems=${MaintenanceSystems:-0}" 
+	echo "(${0##*/}) 23Media%20Status 1 WARN - Something is different. Visit https://status.23m.com/ for details" 
 fi
 
 # end of piggybacked mode
