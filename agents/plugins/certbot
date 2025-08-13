@@ -2,11 +2,12 @@
 #
 # CheckMK plugin to verify certbot operations.
 #
-# '/usr/bin/certbot renew --no-self-upgrade' may exit with 0 due to all certs
-# being skipped since 'Cert not yet due for renewal'. As such we need to loop
-# through all of the certs and check individually.
+# Purpose:
+# - Validate that certbot CAN renew each domain (challenge works), independent of expiry.
+# - Domain discovery via `certbot certificates` (handles multiple names per cert).
+# - If a domain fails the dry-run, print the domain name and a one-line error for CheckMK.
 #
-# Another issue is certbot already running in parallel which we also need to
+# If certbot is already running in parallel we need to
 # take care of by trying again after a random amount of time.
 #
 # Let this check run every 24 hours as such put the file into
@@ -26,51 +27,108 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
+
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# === Configurable authenticator ===
+AUTH_PLUGIN="--apache"   # e.g. "--nginx" or your DNS/manual plugin
+
+# === Retry configuration for per-domain dry-runs ===
+CHECK_RETRIES=2              # Number of attempts per domain (1 = no retry)
+CHECK_WAIT_BASE=60           # Base seconds between domain checks
+CHECK_WAIT_JITTER=70         # Added random jitter [0..SLEEP_JITTER]
+
+# === Retry configuration for domain discovery ===
+DISCOVERY_RETRIES=2          # How many times to attempt certificate discovery (1 = no retry)
+DISCOVERY_WAIT_BASE=5        # Base wait between discovery attempts
+DISCOVERY_WAIT_JITTER=10     # Jitter to approximate 5..15s 
+
+# Sleep without a subprocess (portable-ish trick); used for random backoff
 snore() {
-	# https://blog.dhampir.no/content/sleeping-without-a-subprocess-in-bash-and-how-to-sleep-forever
-	local IFS
-	[[ -n "${_snore_fd:-}" ]] || { exec {_snore_fd}<> <(:); } 2>/dev/null ||
-	{
-		# workaround for MacOS and similar systems
-		local fifo
-		fifo=$(mktemp -u)
-		mkfifo -m 700 "$fifo"
-		exec {_snore_fd}<>"$fifo"
-		rm "$fifo"
-	}
-	read ${1:+-t "$1"} -u $_snore_fd || :
+  # https://blog.dhampir.no/content/sleeping-without-a-subprocess-in-bash-and-how-to-sleep-forever
+  local IFS
+  [[ -n "${_snore_fd:-}" ]] || { exec {_snore_fd}<> <(:); } 2>/dev/null ||
+  {
+    # Fallback for systems without process substitution (e.g., some BSD/Mac variants)
+    local fifo
+    fifo=$(mktemp -u)
+    mkfifo -m 700 "$fifo"
+    exec {_snore_fd}<>"$fifo"
+    rm "$fifo"
+  }
+  read ${1:+-t "$1"} -u $_snore_fd || :
 } # snore
 
+# --- Robust domain discovery wrapped in a function (with retry/backoff) ---
+# Returns domain list on stdout; non-zero exit if discovery fails.
+fetch_domains() {
+  # Try to extract all SANs from `certbot certificates`. The "Domains:" lines list all names.
+  local attempt=1
+  local domains
+
+  while : ; do
+    domains="$(certbot certificates 2>/dev/null \
+      | awk '/^ *Domains:/{for (i=2;i<=NF;i++) print $i}' \
+      | tr ' ' '\n' | sort -u)"
+
+    if [ -n "$domains" ]; then
+      printf '%s\n' "$domains"
+      return 0
+    fi
+
+    if [ "$attempt" -ge "$DISCOVERY_RETRIES" ]; then
+      return 1
+    fi
+
+    local wait_secs=$(( DISCOVERY_WAIT_BASE + (RANDOM % (DISCOVERY_WAIT_JITTER + 1)) ))
+    snore "$wait_secs"
+    attempt=$(( attempt + 1 ))
+  done
+} # fetch_domains
+
+# Test each domain individually using a certbot dry-run and print failures as:
+#   "<domain>: <one-line error>"
 check_certs() {
-	# loop through "$1" and check each certificate individually
-	echo "$MyCerts" | while read ; do
-		CertDetails="$(certbot certonly --test-cert -d "${REPLY}" --dry-run --apache 2>/dev/null)"
-		if [ $? -ne 0 ]; then
-			tr "\n" " " <<<"${CertDetails}"
-			echo ""
-		fi
-	done
+  while IFS= read -r domain; do
+    [ -z "$domain" ] && continue
+
+    # Run a dry-run against staging; capture BOTH stdout and stderr.
+    # Add retries to mitigate transient issues (locks, network, rate limits).
+    attempt=0
+    while : ; do
+      if CertDetails="$(certbot certonly --dry-run $AUTH_PLUGIN -d "$domain" 2>&1)"; then
+        # Success -> stop retry loop for this domain
+        break
+      fi
+
+	  # max retries
+      if [ "$attempt" -ge "$CHECK_RETRIES" ]; then
+        # Final failure: collapse newlines to spaces so each failed domain is exactly one output line.
+      printf '%s: %s\n' "$domain" "$(tr '\n' ' ' <<<"$CertDetails")"
+        break
+    fi
+
+      # Backoff before next try
+      local wait_secs=$(( CHECK_WAIT_BASE + (RANDOM % (CHECK_WAIT_JITTER + 1)) ))
+      snore "$wait_secs"
+      attempt=$(( attempt + 1 ))
+    done
+  done <<< "$MyCerts"
 } # check_certs
 
-MyCerts="$(certbot renew --no-self-upgrade 2>/dev/null | awk -F"/" '/Processing/ {print $5}' | sed 's/\.conf//')"
-
-if [ "X${MyCerts}" = "X" ]; then
-	# empty list, wait for 60 - 130 seconds and try again
-	snore $(( 60 + ${RANDOM} / 500 ))
-	MyCerts="$(certbot renew --no-self-upgrade 2>/dev/null | awk -F"/" '/Processing/ {print $5}' | sed 's/\.conf//')"
+# --- Get domain list once via function ---
+if ! MyCerts="$(fetch_domains)"; then
+  echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 3 UNKN - Not able to fetch certificate list | certs_ok=0 certs_failed=0"
+  exit 0
 fi
 
-if [ "X${MyCerts}" = "X" ]; then
-	echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 3 UNKN - Not able to fetch certificate list | certs_ok=0 certs_failed=0"
+# Run the per-domain checks
+CountOfCerts=$(wc -l <<<"$MyCerts")
+CertStatus="$(check_certs)"
+
+if [ -z "$CertStatus" ]; then
+  echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 0 OK - ${CountOfCerts} w/o problems | certs_ok=${CountOfCerts:-0} certs_failed=0"
 else
-	CountOfCerts=$(wc -l <<<"${MyCerts}")
-	CertStatus="$(check_certs "${MyCerts}")"
-	if [ "X${CertStatus}" = "X" ]; then
-		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 0 OK - ${CountOfCerts} w/o problems | certs_ok=${CountOfCerts:-0} certs_failed=0"
-	else
-		CountOfProblemCerts=$(wc -l <<<"${CertStatus}")
-		echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 2 CRIT - $(tr '\n' '/' <<<${CertStatus}) | certs_ok=$(( ${CountOfCerts:-0} - ${CountOfProblemCerts:-0} )) certs_failed=${CountOfProblemCerts:-0}"
-	fi
+  CountOfProblemCerts=$(wc -l <<<"$CertStatus")
+  echo -e "<<<mrpe>>>\n(${0##*/}) Certbot%20Status 2 CRIT - $(tr '\n' '/' <<<"$CertStatus") | certs_ok=$(( ${CountOfCerts:-0} - ${CountOfProblemCerts:-0} )) certs_failed=${CountOfProblemCerts:-0}"
 fi
