@@ -64,13 +64,25 @@ for ComputerName in "${BORG_STATUS}"/* ; do
 		
 		# interpret the amount of fails
 		if [ "${sec_crit}" -gt "${sec_last}" ]; then
-			echo "(${0##*/}) Borg%20Backup 2 CRIT - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
+			Status="2 CRIT"
 		elif [ "${sec_warn}" -gt "${sec_last}" ]; then
-			echo "(${0##*/}) Borg%20Backup 1 WARN - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
+			Status="1 WARN"
 		else
-			echo "(${0##*/}) Borg%20Backup 0 OK - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
+			Status="0 OK"
 		fi
-	
-		echo "<<<<>>>>"
+
+		# check for running backup
+		df | awk -F":" '/\/tmp\/borg-backups.sh/ {print $1}' | grep -q "${HostName}"
+		case $? in
+			0)
+				BackupPrefix="Backup läuft gerade, l"
+				Status="0 OK"
+				;;
+			*)
+				BackupPrefix="L"
+				;;
+		esac
+
+		echo -e "(${0##*/}) Borg%20Backup ${Status} - ${BackupPrefix}etztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}\n<<<<>>>>"
 	fi
 done
