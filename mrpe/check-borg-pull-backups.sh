@@ -1,5 +1,10 @@
 #!/bin/bash
 #
+# (c) 2021-2026 Thomas Kaiser
+#
+# CheckMK sensor to monitor Borg backup execution. Has to run on same host
+# that performs the pull backups.
+#
 # /etc/borg-backup.cfg has to contain $BORG_STATUS to read the state
 # files the pull backup script creates after performing backups.
 # The backup status will be reported to the servers in question using
@@ -39,16 +44,31 @@ for ComputerName in "${BORG_STATUS}"/* ; do
 		:
 	else	
 		sec_last="$(date --date="${last}" '+%s')"
-		
+
+		# determine backup duration
+		HostName="${ComputerName##*/}"
+		BorgLog="/var/log/borg-backup/${HostName}.log"
+		if [ -f "${BorgLog}" ]; then
+			LastLogEntries="$(tail -n 250 "${BorgLog}")"
+			FinishTime="$(awk -F": " '/^Time \(end\)/ {print $2}' <<<"${LastLogEntries}" | tail -n1)"
+			FinishSeconds=$(date --date="${FinishTime}" '+%s')
+			Duration="$(( ${FinishSeconds} - ${sec_last} ))"
+			DurationInMin="$(awk '{printf ("%0.1f",$1/60); }' <<<"${Duration}")"
+			DisplayTime=" ($(tr '.' ',' <<<"${DurationInMin}") Min.) | duration=${DurationInMin}"
+		fi
+
+		EndTime="$(tail -n5 "${BorgLog}" | awk -F" " '/ beendet: / {print $6". "$5" "$7}')"
+		StartTime="$(date --date="${last}" '+%e. %b. %H:%M:%S')"
+
 		echo -e "<<<<online-${ComputerName##*/}>>>>\n<<<mrpe>>>"
 		
 		# interpret the amount of fails
 		if [ "${sec_crit}" -gt "${sec_last}" ]; then
-			echo "(${0##*/}) Borg%20Backup 2 CRIT - last pull backup made on ${last}"
+			echo "(${0##*/}) Borg%20Backup 2 CRIT - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
 		elif [ "${sec_warn}" -gt "${sec_last}" ]; then
-			echo "(${0##*/}) Borg%20Backup 1 WARN - last pull backup made on ${last}"
+			echo "(${0##*/}) Borg%20Backup 1 WARN - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
 		else
-			echo "(${0##*/}) Borg%20Backup 0 OK - last pull backup made on ${last}"
+			echo "(${0##*/}) Borg%20Backup 0 OK - Letztes Pull-Backup erstellt: ${StartTime} - ${EndTime}${DisplayTime}"
 		fi
 	
 		echo "<<<<>>>>"
