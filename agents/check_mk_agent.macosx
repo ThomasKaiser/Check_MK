@@ -241,7 +241,7 @@ pagesize=$(awk '/Mach/ {print $8}' <<<"${VMStatOutput}")
 # occupiedpages=$(awk '/occupied by compressor:/ {print $5}' <<<"${VMStatOutput}")
 MemTotal=$(sysctl -n hw.memsize)
 SwapTotal=$(( ${MemTotal} * 3 ))
-MemFree=$(( $(( $(awk '/speculative:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/inactive:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/free:/ {print $3}' <<<"${VMStatOutput}") )) * $pagesize ))
+MemFree=$(( $(( $(awk '/speculative:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/inactive:/ {print $3}' <<<"${VMStatOutput}") + $(awk '/Pages free:/ {print $3}' <<<"${VMStatOutput}") )) * $pagesize ))
 SwapSize="$(sysctl -n vm.swapusage | sed 's/,/./g' | awk -F"used = " '{print $2}' | cut -f1 -d' ')"
 case ${SwapSize} in
 	*K)
