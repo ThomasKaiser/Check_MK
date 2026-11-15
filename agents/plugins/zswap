@@ -26,7 +26,7 @@
 # exit. In case it detects zswap and zram running in parallel the
 # status will change to UNKN.
 #
-# (c) Thomas Kaiser, 2020.
+# (c) Thomas Kaiser, 2020-2026.
 #
 # This file is part of Check_MK.
 # The official homepage is at http://mathias-kettner.de/check_mk.
@@ -84,8 +84,10 @@ stored_size_mb=$(awk '{printf ("%0.2f",$1/256); }' <<<"${stored_pages}")
 read max_pool_percent </sys/module/zswap/parameters/max_pool_percent 2>/dev/null
 read compressor </sys/module/zswap/parameters/compressor 2>/dev/null
 read zpool </sys/module/zswap/parameters/zpool 2>/dev/null
-if [ -n ${compressor} -a -n ${zpool} ]; then
+if [ -n "${compressor}" -a -n "${zpool}" ]; then
 	ModuleParams="Using ${compressor}/${zpool}, "
+elif [ -n "${compressor}" ]; then
+	ModuleParams="Using ${compressor}, "
 fi
 
 if [ ${pool_limit_hit} -eq 0 ]; then
